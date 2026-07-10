@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: dotdash
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    # No API keys needed here — each user enters their own key
+    # (Claude / OpenAI / Gemini) in the settings panel, used only
+    # for the natural-language prompt box, stored in their own browser.

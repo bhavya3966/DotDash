@@ -1,0 +1,1668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DotDash Analytics</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Premium SaaS Palette */
+    --bg: #F8FAFC; 
+    --card-bg: #FFFFFF;
+    --ink: #0F172A; 
+    --ink-soft: #64748B; 
+    --line: #E2E8F0; 
+    --primary: #2563EB; 
+    --primary-soft: rgba(37, 99, 235, 0.1);
+    --secondary: #06B6D4;
+    --success: #22C55E;
+    --success-soft: rgba(34, 197, 94, 0.1);
+    --danger: #EF4444;
+    --danger-soft: rgba(239, 68, 68, 0.1);
+    --purple: #7C3AED;
+    --mono: 'JetBrains Mono', monospace;
+    
+    /* Shadows & Radii */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+    
+    /* Transitions */
+    --transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  * { box-sizing: border-box; }
+  
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Layout Wrapper */
+  .app-container {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    background: var(--card-bg);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 16px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    z-index: 50;
+  }
+  
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 12px 32px;
+  }
+  .brand i {
+    font-size: 28px;
+    color: var(--primary);
+  }
+  .brand span {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+  }
+
+  .nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .nav-links a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    text-decoration: none;
+    color: var(--ink-soft);
+    font-weight: 500;
+    font-size: 14px;
+    border-radius: var(--radius-sm);
+    transition: var(--transition);
+  }
+  .nav-links a i { font-size: 20px; }
+  .nav-links a:hover, .nav-links a.active {
+    background: var(--primary-soft);
+    color: var(--primary);
+  }
+
+  /* Main Content Area */
+  .main-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Important for flex children scrolling */
+  }
+
+  /* Top Navbar */
+  .top-navbar {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #F1F5F9;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    width: 320px;
+  }
+  .search-bar i { color: var(--ink-soft); font-size: 18px; }
+  .search-bar input {
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    outline: none;
+    width: 100%;
+    color: var(--ink);
+  }
+
+  .topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .topbar-actions .date-badge {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    background: #F1F5F9;
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+  }
+  .topbar-actions .icon-btn {
+    color: var(--ink-soft);
+    font-size: 22px;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .topbar-actions .icon-btn:hover { color: var(--ink); }
+  .avatar {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 600;
+    font-size: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  main.content {
+    padding: 32px 40px 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* Typography */
+  .display-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 42px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    margin: 0 0 8px 0;
+  }
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0 0 24px 0;
+  }
+
+  /* Panels / Cards */
+  .panel {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-md);
+    transition: var(--transition);
+  }
+  .panel:hover { box-shadow: var(--shadow-lg); }
+
+  /* Premium KPI Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .kpi-premium-card {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+    transition: var(--transition);
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-premium-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+  }
+  .kpi-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .kpi-title {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .kpi-title i { font-size: 20px; color: var(--primary); }
+  .kpi-value {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 44px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1;
+    margin-bottom: 12px;
+  }
+  .kpi-meta {
+    font-size: 13px;
+    color: var(--ink-soft);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    padding: 4px 8px;
+    border-radius: var(--radius-full);
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .badge.text-success { background: var(--success-soft); color: var(--success); }
+  .badge.text-danger { background: var(--danger-soft); color: var(--danger); }
+
+  /* AI Insights Layout */
+  .ai-insights-panel {
+    background: linear-gradient(145deg, #F8FAFC, #FFFFFF);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-md);
+    position: relative;
+    overflow: hidden;
+  }
+  .ai-insights-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; right: 0; width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(124, 58, 237, 0.1) 0%, transparent 70%);
+    transform: translate(30%, -30%);
+  }
+  .ai-insights-header {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .text-purple { color: var(--purple); }
+  
+  .chat-box {
+    display: flex;
+    gap: 12px;
+    background: #FFFFFF;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 8px;
+    box-shadow: var(--shadow-sm);
+    margin-top: 24px;
+    transition: var(--transition);
+  }
+  .chat-box:focus-within {
+    border-color: var(--purple);
+    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  }
+  .chat-box input {
+    flex: 1;
+    border: none;
+    outline: none;
+    font-size: 15px;
+    padding: 12px 16px;
+    background: transparent;
+  }
+
+  /* Toolbar / Filters */
+  .enterprise-filters {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 16px 24px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .filter-row-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .filter-row-container::-webkit-scrollbar { height: 4px; }
+  .filter-row-container::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+  
+  .filter-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-soft);
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 100px;
+  }
+  
+  .widget-tab, .week-btn {
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--line);
+    background: #FFFFFF;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .widget-tab:hover, .week-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .widget-tab.active, .week-btn.active {
+    background: var(--ink);
+    color: white;
+    border-color: var(--ink);
+    box-shadow: var(--shadow-sm);
+  }
+  .widget-tab.active .s { color: #94A3B8; }
+  .widget-tab .s { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+
+  /* Waterfall Bridge */
+  .waterfall-bridge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 32px;
+    overflow-x: auto;
+  }
+  .wf-step {
+    flex: 1;
+    min-width: 160px;
+  }
+  .wf-card {
+    background: #F8FAFC;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    text-align: center;
+    transition: var(--transition);
+  }
+  .wf-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .wf-card.wf-new { border-bottom: 4px solid var(--success); }
+  .wf-card.wf-lost { border-bottom: 4px solid var(--danger); }
+  .wf-card.wf-current {
+    background: var(--primary-soft);
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    border-bottom: 4px solid var(--primary);
+  }
+  .wf-label { display: block; font-size: 13px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .wf-val { display: block; font-family: var(--mono); font-size: 24px; font-weight: 600; color: var(--ink); }
+  .wf-arrow { font-size: 24px; color: #CBD5E1; }
+  .text-success { color: var(--success); }
+  .text-danger { color: var(--danger); }
+  .text-primary { color: var(--primary); }
+
+  /* Regional Heads Grid */
+  .rh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+  }
+  .rh-premium-card {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    transition: var(--transition);
+  }
+  .rh-premium-card:hover {
+    box-shadow: var(--shadow-md);
+    border-color: #CBD5E1;
+  }
+  .rh-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .rh-avatar {
+    width: 40px; height: 40px;
+    background: #F1F5F9;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-soft);
+    font-size: 20px;
+  }
+  .rh-info { flex: 1; overflow: hidden; }
+  .rh-name { font-weight: 600; font-size: 15px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-stats { font-size: 13px; color: var(--ink-soft); font-family: var(--mono); margin-top: 4px;}
+  .rh-val { font-family: var(--mono); font-weight: 700; font-size: 16px; text-align: right; }
+  .rh-progress {
+    height: 6px;
+    background: #F1F5F9;
+    border-radius: var(--radius-full);
+    overflow: hidden;
+  }
+  .rh-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--secondary), var(--primary));
+    border-radius: var(--radius-full);
+    transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Enterprise Table */
+  .table-wrapper {
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+  }
+  .table-header-toolbar {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #F8FAFC;
+  }
+  .table-scroll {
+    overflow-x: auto;
+    max-height: 500px;
+  }
+  table.enterprise-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+  }
+  .enterprise-table th {
+    position: sticky;
+    top: 0;
+    background: #F8FAFC;
+    color: var(--ink-soft);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 12px;
+    padding: 16px 24px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    z-index: 10;
+  }
+  .enterprise-table td {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .enterprise-table tbody tr {
+    transition: var(--transition);
+  }
+  .enterprise-table tbody tr:hover {
+    background: #F1F5F9;
+  }
+  .status-badge {
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+  }
+  .status-active { background: var(--success-soft); color: var(--success); }
+  .status-churn { background: var(--danger-soft); color: var(--danger); }
+
+  /* Form & Buttons */
+  button {
+    font-family: 'Inter', sans-serif;
+    transition: var(--transition);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  button.primary {
+    background: var(--ink);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 14px;
+    box-shadow: var(--shadow-sm);
+  }
+  button.primary:hover { 
+    background: #334155;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md);
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    padding: 10px 18px;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 13px;
+  }
+  button.ghost:hover { background: #F1F5F9; }
+
+  /* Settings row mappings */
+  .settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  input[type=password], input[type=text], select {
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid #CBD5E1;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    background: #FFFFFF;
+    color: var(--ink);
+    transition: var(--transition);
+  }
+  input:focus, select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+  }
+  .upload-zone {
+    border: 2px dashed #CBD5E1;
+    border-radius: var(--radius-md);
+    padding: 40px 28px;
+    text-align: center;
+    cursor: pointer;
+    background: #F8FAFC;
+    transition: var(--transition);
+    font-weight: 500;
+    color: var(--ink-soft);
+  }
+  .upload-zone:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+  .upload-zone input { display: none; }
+  
+  .trend-wrap { max-width: 100%; height: 280px; margin-top: 20px; }
+  
+  /* Generic Dashboard classes */
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
+  
+  /* Loading states */
+  .rb-loading { color: var(--primary); font-weight: 500; font-size: 15px; text-align: center; padding: 60px 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .rb-loading::after { content: ""; width: 24px; height: 24px; border: 3px solid var(--primary-soft); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  .error { color: var(--danger); font-size: 14px; background: var(--danger-soft); padding: 12px; border-radius: var(--radius-sm); border: 1px solid #FECACA; display: inline-block; }
+  
+  /* Live Bar mapping */
+  #rbLiveBar {
+    padding: 12px 24px;
+    background: var(--success-soft);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--success);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  #rbLiveBar a { text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: var(--transition); font-weight: 600; color: var(--success); }
+  #rbLiveBar a:hover { background: rgba(34, 197, 94, 0.15); }
+  
+  /* Metric Tabs -> Hidden because we use AI prompt logic mostly, but styling for JS preservation */
+  .metric-tabs { display: flex; gap: 8px; margin-bottom: 24px; background: #F1F5F9; padding: 6px; border-radius: var(--radius-md); width: max-content; }
+  .metric-tab { padding: 10px 24px; border-radius: var(--radius-sm); font-weight: 600; font-size: 14px; cursor: pointer; transition: var(--transition); color: var(--ink-soft); }
+  .metric-tab.active { background: #FFFFFF; color: var(--ink); box-shadow: var(--shadow-sm); }
+</style>
+</head>
+<body>
+
+<div class="app-container">
+  
+  <aside class="sidebar">
+    <div class="brand">
+      <i class="ph ph-chart-polar"></i>
+      <span>DotDash</span>
+    </div>
+    <nav class="nav-links">
+      <a href="#" class="active"><i class="ph ph-squares-four"></i> Dashboard</a>
+      <a href="#"><i class="ph ph-chart-line-up"></i> Revenue Bridge</a>
+      <a href="#"><i class="ph ph-users"></i> Merchants</a>
+      <a href="#"><i class="ph ph-sparkle"></i> AI Insights</a>
+      <a href="#"><i class="ph ph-trend-up"></i> Trends</a>
+      <a href="#"><i class="ph ph-file-text"></i> Reports</a>
+      <a href="#"><i class="ph ph-gear"></i> Settings</a>
+    </nav>
+  </aside>
+
+  <div class="main-wrapper">
+    
+    <nav class="top-navbar">
+      <div class="search-bar">
+        <i class="ph ph-magnifying-glass"></i>
+        <input type="text" placeholder="Search merchants, metrics...">
+      </div>
+      <div class="topbar-actions">
+        <div class="date-badge" id="currentDateBadge">Today</div>
+        <i class="ph ph-bell icon-btn"></i>
+        <div class="avatar">BJ</div>
+      </div>
+    </nav>
+
+    <main class="content">
+      
+      <section class="panel" style="margin-bottom: 32px;">
+        <h3 class="section-title" style="margin-top:0;">Workspace Settings</h3>
+        <div class="settings-row">
+          <select id="rbProviderSelect">
+            <option value="anthropic">Claude (Anthropic)</option>
+            <option value="gemini">Gemini (Google)</option>
+            <option value="openai">GPT (OpenAI)</option>
+          </select>
+          <input type="password" id="rbApiKeyInput" placeholder="Paste your API key" style="flex:1; min-width: 250px;" />
+          <input type="text" class="model-input" id="rbModelInput" placeholder="model (optional)" />
+          <span class="key-status missing" id="rbKeyStatus" style="font-size: 13px; font-weight: 500;">no key saved</span>
+        </div>
+      </section>
+
+      <section class="panel" id="rbUploadPanel" style="margin-bottom: 32px;">
+        <h3 class="section-title" style="margin-top:0;">Data Source</h3>
+        <div class="settings-row" style="margin-bottom:24px;">
+          <input type="text" id="rbSheetUrlInput" placeholder="Paste a Google Sheets link…" style="flex:1;" />
+          <button class="primary" id="rbSheetLoadBtn">Connect Shared Sheet</button>
+        </div>
+        <div class="upload-zone" id="rbDropZone">
+          <i class="ph ph-upload-simple" style="font-size: 32px; margin-bottom: 12px; color: var(--primary);"></i>
+          <div id="rbDropLabel">Or drop a local .xlsx or .csv file here for a private session</div>
+          <input type="file" id="rbFileInput" accept=".xlsx,.xls,.csv" />
+        </div>
+        <div id="rbFileMeta" style="margin-top: 12px; font-size: 13px; color: var(--ink-soft); text-align: center;"></div>
+      </section>
+
+      <section id="rbDashboard" style="display:none;">
+        
+        <h1 class="display-title">Good Morning.</h1>
+        <p style="color: var(--ink-soft); margin-bottom: 32px; font-size: 15px;">Here is your AI-powered performance summary for today.</p>
+
+        <div id="rbLiveBar" style="display:none;">
+          <span id="rbLiveStatus"><i class="ph ph-broadcast"></i> Live from Google Sheet</span>
+          <span>
+            <a href="#" id="rbChangeSource">Change Source</a>
+            <a href="#" id="rbRefreshNow"><i class="ph ph-arrows-clockwise"></i> Refresh Now</a>
+          </span>
+        </div>
+
+        <div id="rbTypeRevenue">
+          
+          <div class="ai-insights-panel" style="margin-bottom: 32px;">
+            <div class="ai-insights-header"><i class="ph ph-sparkle text-purple"></i> DotDash AI Assistant</div>
+            <p style="color: var(--ink-soft); font-size: 15px; margin: 0;">Ask me to analyze teams, regions, or specific metrics.</p>
+            <div class="chat-box">
+              <input type="text" id="rbPromptInput" placeholder="e.g. show me Farming team from W0 to W2, or merchant count for Rista" />
+              <button class="primary" id="rbAskBtn" style="border-radius: 8px;"><i class="ph ph-paper-plane-right"></i> Generate</button>
+            </div>
+          </div>
+
+          <div class="enterprise-filters">
+             <div class="filter-row-container">
+               <div class="filter-label">Metric</div>
+               <div id="rbMetricTabs" class="metric-tabs" style="margin: 0;">
+                 <div class="metric-tab active" data-metric="revenue">Revenue</div>
+                 <div class="metric-tab" data-metric="merchants">Merchants</div>
+                 <div class="metric-tab" data-metric="stores">Stores</div>
+               </div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Week</div>
+               <div id="rbWeekBtns" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Month</div>
+               <div id="rbMonthTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Quarter</div>
+               <div id="rbQuarterTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Team</div>
+               <div id="rbTeamTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Segment</div>
+               <div id="rbSegmentTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Regional Head</div>
+               <div id="rbRhTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container" id="rbProductGroup" style="display:none;">
+               <div class="filter-label">Product</div>
+               <div id="rbProductTabs" class="filter-row-container" style="padding:0;"></div>
+             </div>
+             
+             <div class="filter-row-container">
+               <div class="filter-label">Location</div>
+               <select id="rbCitySelect"><option value="All">All Cities</option></select>
+               <select id="rbRegionSelect"><option value="All">All Regions</option></select>
+             </div>
+          </div>
+
+          <div id="rbBody">
+            <div class="rb-loading">Analyzing Enterprise Data…</div>
+          </div>
+        </div>
+
+        <div id="rbTypeGeneric" style="display:none;" class="panel">
+          <div id="rbGenericMeta" style="margin-bottom:24px; font-size:14px; color: var(--ink-soft);"></div>
+          <div id="rbGenericOverview" class="overview-grid"></div>
+          
+          <div class="ai-insights-panel" style="margin-top:32px;">
+            <div class="ai-insights-header"><i class="ph ph-sparkle text-purple"></i> Ask Data</div>
+            <div class="chat-box">
+              <input type="text" id="rbGenericPromptInput" placeholder="Ask a question about this data…" />
+              <button class="primary" id="rbGenericAskBtn"><i class="ph ph-paper-plane-right"></i> Generate</button>
+            </div>
+            <div id="rbGenericLog" style="margin-top:24px;"></div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+</div>
+
+<script>
+// Set date visually
+document.getElementById('currentDateBadge').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+const rb = {
+  sessionId: null,
+  dashboardType: 'revenue_bridge',
+  metric: 'revenue',
+  weeks: [],
+  months: [],
+  quarters: [],
+  teams: [],
+  segments: [],
+  rhs: [],
+  cities: [],
+  regions: [],
+  products: [],
+  team: 'All Merchants',
+  segment: 'All',
+  rh: 'All Merchants',
+  city: 'All',
+  region: 'All',
+  product: 'All',
+  prevWeek: null,
+  currWeek: null,
+  isShared: false,
+  lastRefreshed: null,
+};
+let rbEventSource = null;
+let rbTrendChart = null;
+
+const rbProviderSelect = document.getElementById('rbProviderSelect');
+const rbApiKeyInput = document.getElementById('rbApiKeyInput');
+const rbModelInput = document.getElementById('rbModelInput');
+const rbKeyStatus = document.getElementById('rbKeyStatus');
+
+function loadRbSettings() {
+  const saved = JSON.parse(localStorage.getItem('dotdash_llm_settings') || '{}');
+  if (saved.provider) rbProviderSelect.value = saved.provider;
+  if (saved.model) rbModelInput.value = saved.model;
+  rbApiKeyInput.value = localStorage.getItem('dotdash_llm_key_' + rbProviderSelect.value) || '';
+  updateRbKeyStatus();
+}
+function updateRbKeyStatus() {
+  const key = rbApiKeyInput.value.trim();
+  rbKeyStatus.textContent = key ? 'Active for ' + rbProviderSelect.options[rbProviderSelect.selectedIndex].text : 'No key saved';
+  rbKeyStatus.style.color = key ? 'var(--success)' : 'var(--ink-soft)';
+}
+function saveRbSettings() {
+  localStorage.setItem('dotdash_llm_settings', JSON.stringify({ provider: rbProviderSelect.value, model: rbModelInput.value.trim() }));
+  if (rbApiKeyInput.value.trim()) localStorage.setItem('dotdash_llm_key_' + rbProviderSelect.value, rbApiKeyInput.value.trim());
+  updateRbKeyStatus();
+}
+rbProviderSelect.addEventListener('change', () => {
+  rbApiKeyInput.value = localStorage.getItem('dotdash_llm_key_' + rbProviderSelect.value) || '';
+  saveRbSettings();
+});
+rbApiKeyInput.addEventListener('input', saveRbSettings);
+rbModelInput.addEventListener('input', saveRbSettings);
+loadRbSettings();
+
+function applySharedSummary(summary) {
+  rb.sessionId = summary.rb_session_id;
+  rb.dashboardType = summary.dashboard_type || 'revenue_bridge';
+  rb.isShared = true;
+  rb.lastRefreshed = summary.last_refreshed;
+
+  document.getElementById('rbDashboard').style.display = 'block';
+  document.getElementById('rbLiveBar').style.display = 'flex';
+  updateLiveStatusText();
+
+  if (rb.dashboardType === 'generic') {
+    document.getElementById('rbTypeRevenue').style.display = 'none';
+    document.getElementById('rbTypeGeneric').style.display = 'block';
+    setupGeneric(summary);
+  } else {
+    document.getElementById('rbTypeGeneric').style.display = 'none';
+    document.getElementById('rbTypeRevenue').style.display = 'block';
+    rb.weeks = summary.weeks;
+    rb.months = summary.months || [];
+    rb.quarters = summary.quarters || [];
+    rb.teams = summary.teams || [];
+    rb.segments = summary.segments || [];
+    rb.rhs = summary.rhs || [];
+    rb.cities = summary.cities || [];
+    rb.regions = summary.regions || [];
+    rb.products = summary.products || [];
+    if (rb.prevWeek === null || !rb.weeks.includes(rb.prevWeek)) {
+      rb.prevWeek = rb.weeks.length >= 2 ? rb.weeks[rb.weeks.length - 2] : rb.weeks[0];
+    }
+    if (rb.currWeek === null || !rb.weeks.includes(rb.currWeek)) {
+      rb.currWeek = rb.weeks[rb.weeks.length - 1];
+    }
+    renderRbControls();
+    rbQuery();
+  }
+  connectSharedStream();
+}
+
+function setupGeneric(summary) {
+  document.getElementById('rbGenericMeta').textContent =
+    `Source: "${summary.sheet_name}" • ${summary.rows} rows • ${summary.columns.length} columns`;
+  document.getElementById('rbGenericLog').innerHTML = '';
+  renderGenericOverview(summary.overview_widgets);
+}
+
+function renderGenericOverview(widgets) {
+  const grid = document.getElementById('rbGenericOverview');
+  grid.innerHTML = '';
+  (widgets || []).forEach((w, i) => {
+    const card = document.createElement('div');
+    card.className = 'panel';
+    const statHtml = w.stat ? `
+      <div style="display:flex; gap:12px; margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--ink-soft); background:#F8FAFC; padding:10px; border-radius:8px;">
+        <span>Mean: ${w.stat.mean}</span><span>Max: ${w.stat.max}</span>
+      </div>` : '';
+    card.innerHTML = `<h4 style="margin:0 0 16px; font-family:var(--font-heading);">${escapeHtml(w.title)}</h4><canvas id="ov-chart-${i}"></canvas>${statHtml}`;
+    grid.appendChild(card);
+    const canvas = card.querySelector('canvas');
+    buildGenericChart(canvas, w.chart_type, w.data, w.chart_x, w.chart_y);
+  });
+}
+
+function updateLiveStatusText() {
+  const el = document.getElementById('rbLiveStatus');
+  if (!rb.lastRefreshed) { el.innerHTML = '<i class="ph ph-broadcast"></i> Live from Google Sheet'; return; }
+  const secs = Math.max(0, Math.round(Date.now() / 1000 - rb.lastRefreshed));
+  const when = secs < 60 ? `${secs}s ago` : `${Math.round(secs / 60)}m ago`;
+  el.innerHTML = `<i class="ph ph-broadcast"></i> Live from Google Sheet · updated ${when}`;
+}
+setInterval(updateLiveStatusText, 5000);
+
+function connectSharedStream() {
+  if (rbEventSource) rbEventSource.close();
+  rbEventSource = new EventSource('/api/rb/shared/stream');
+  rbEventSource.onmessage = (evt) => {
+    if (!rb.isShared) return;
+    try {
+      const data = JSON.parse(evt.data);
+      applyIncomingSharedUpdate(data);
+    } catch (e) { }
+  };
+  rbEventSource.onerror = () => {};
+}
+
+function applyIncomingSharedUpdate(data) {
+  rb.dashboardType = data.dashboard_type || 'revenue_bridge';
+  rb.lastRefreshed = data.last_refreshed;
+  updateLiveStatusText();
+  if (rb.dashboardType === 'generic') {
+    setupGeneric(data);
+  } else {
+    rb.weeks = data.weeks;
+    rb.months = data.months || [];
+    rb.quarters = data.quarters || [];
+    rb.teams = data.teams || [];
+    rb.segments = data.segments || [];
+    rb.rhs = data.rhs || [];
+    rb.cities = data.cities || [];
+    rb.regions = data.regions || [];
+    rb.products = data.products || [];
+    renderRbControls();
+    rbQuery();
+  }
+}
+
+async function bootstrapSharedDashboard() {
+  try {
+    const res = await fetch('/api/rb/shared/status');
+    const data = await res.json();
+    if (data.active) applySharedSummary(data);
+  } catch (e) { }
+}
+bootstrapSharedDashboard();
+
+document.getElementById('rbSheetLoadBtn').addEventListener('click', async () => {
+  const url = document.getElementById('rbSheetUrlInput').value.trim();
+  if (!url) return;
+  const btn = document.getElementById('rbSheetLoadBtn');
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  document.getElementById('rbFileMeta').innerHTML = '';
+  try {
+    const res = await fetch('/api/rb/shared/set', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sheet_url: url }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Could not load this sheet.');
+    applySharedSummary(data);
+  } catch (err) {
+    document.getElementById('rbFileMeta').innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Connect Shared Sheet';
+  }
+});
+
+document.getElementById('rbRefreshNow').addEventListener('click', async (e) => {
+  e.preventDefault();
+  const label = document.getElementById('rbRefreshNow');
+  label.innerHTML = '<i class="ph ph-spinner-gap" style="animation: spin 1s linear infinite;"></i> Refreshing…';
+  try {
+    await fetch('/api/rb/shared/refresh', { method: 'POST' });
+  } finally {
+    label.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Refresh Now';
+  }
+});
+
+document.getElementById('rbChangeSource').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (rbEventSource) rbEventSource.close();
+  rb.isShared = false;
+  document.getElementById('rbDashboard').style.display = 'none';
+  document.getElementById('rbLiveBar').style.display = 'none';
+});
+
+const rbDropZone = document.getElementById('rbDropZone');
+const rbFileInput = document.getElementById('rbFileInput');
+rbDropZone.addEventListener('click', () => rbFileInput.click());
+rbDropZone.addEventListener('dragover', e => { e.preventDefault(); rbDropZone.style.borderColor = 'var(--primary)'; });
+rbDropZone.addEventListener('dragleave', () => { rbDropZone.style.borderColor = '#CBD5E1'; });
+rbDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  rbDropZone.style.borderColor = '#CBD5E1';
+  if (e.dataTransfer.files.length) handleRbFile(e.dataTransfer.files[0]);
+});
+rbFileInput.addEventListener('change', () => {
+  if (rbFileInput.files.length) handleRbFile(rbFileInput.files[0]);
+});
+
+async function handleRbFile(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  document.getElementById('rbDropLabel').textContent = 'Reading enterprise file…';
+  document.getElementById('rbFileMeta').innerHTML = '';
+  try {
+    const res = await fetch('/api/rb/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Upload failed');
+
+    if (rbEventSource) { rbEventSource.close(); rbEventSource = null; }
+    rb.sessionId = data.rb_session_id;
+    rb.dashboardType = data.dashboard_type || 'revenue_bridge';
+    rb.metric = 'revenue';
+    rb.team = 'All Merchants';
+    rb.segment = 'All';
+    rb.rh = 'All Merchants';
+    rb.city = 'All';
+    rb.region = 'All';
+    rb.product = 'All';
+    rb.isShared = false;
+
+    document.getElementById('rbDashboard').style.display = 'block';
+    document.getElementById('rbLiveBar').style.display = 'none';
+
+    if (rb.dashboardType === 'generic') {
+      document.getElementById('rbTypeRevenue').style.display = 'none';
+      document.getElementById('rbTypeGeneric').style.display = 'block';
+      document.getElementById('rbDropLabel').textContent = 'Upload a different file to replace this session';
+      document.getElementById('rbFileMeta').textContent = `${file.name} — ${data.rows} rows (Generated auto-overview)`;
+      setupGeneric(data);
+    } else {
+      document.getElementById('rbTypeGeneric').style.display = 'none';
+      document.getElementById('rbTypeRevenue').style.display = 'block';
+      rb.weeks = data.weeks;
+      rb.months = data.months || [];
+      rb.quarters = data.quarters || [];
+      rb.teams = data.teams || [];
+      rb.segments = data.segments || [];
+      rb.rhs = data.rhs || [];
+      rb.cities = data.cities || [];
+      rb.regions = data.regions || [];
+      rb.products = data.products || [];
+      rb.prevWeek = rb.weeks.length >= 2 ? rb.weeks[rb.weeks.length - 2] : rb.weeks[0];
+      rb.currWeek = rb.weeks[rb.weeks.length - 1];
+      document.getElementById('rbDropLabel').textContent = 'Upload a different file to replace this session';
+      document.getElementById('rbFileMeta').textContent = `${file.name} — ${data.rows} rows mapped.`;
+      renderRbControls();
+      rbQuery();
+    }
+  } catch (err) {
+    document.getElementById('rbDropLabel').textContent = 'Or drop a local .xlsx or .csv file here for a private session';
+    document.getElementById('rbFileMeta').innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+  }
+}
+
+function renderTabRow(elId, items, stateKey, allLabel) {
+  const el = document.getElementById(elId);
+  if (!items || !items.length) { el.innerHTML = ''; return; }
+  const allBtn = `<div class="widget-tab ${rb[stateKey] === allLabel ? 'active' : ''}" data-val="${escapeHtml(allLabel)}"><div class="n">${escapeHtml(allLabel)}</div></div>`;
+  const btns = items.map(t => `
+    <div class="widget-tab ${rb[stateKey] === t.name ? 'active' : ''}" data-val="${escapeHtml(t.name)}">
+      <div class="n">${escapeHtml(t.name)}</div>
+      <div class="s">${t.merchants} MX</div>
+    </div>`).join('');
+  el.innerHTML = allBtn + btns;
+  el.querySelectorAll('.widget-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rb[stateKey] = btn.dataset.val;
+      renderRbControls();
+      rbQuery();
+    });
+  });
+}
+
+function renderDropdown(elId, items, stateKey, allLabel) {
+  const el = document.getElementById(elId);
+  const opts = [`<option value="${escapeHtml(allLabel)}">${escapeHtml(allLabel)}</option>`]
+    .concat((items || []).map(t => `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)} (${t.merchants} MX)</option>`));
+  el.innerHTML = opts.join('');
+  el.value = rb[stateKey];
+}
+
+function renderRbControls() {
+  document.querySelectorAll('#rbMetricTabs .metric-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.metric === rb.metric);
+  });
+
+  const weekBtns = [];
+  for (let i = 0; i < rb.weeks.length - 1; i++) {
+    weekBtns.push([rb.weeks[i], rb.weeks[i + 1]]);
+  }
+  for (let j = 2; j < rb.weeks.length; j++) {
+    weekBtns.push([rb.weeks[0], rb.weeks[j]]);
+  }
+  const wbEl = document.getElementById('rbWeekBtns');
+  wbEl.innerHTML = weekBtns.map(([p, c]) => {
+    const active = (p === rb.prevWeek && c === rb.currWeek) ? 'active' : '';
+    return `<div class="week-btn ${active}" data-prev="${p}" data-curr="${c}">W${p} → W${c}</div>`;
+  }).join('');
+  wbEl.querySelectorAll('.week-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      rb.prevWeek = parseInt(btn.dataset.prev);
+      rb.currWeek = parseInt(btn.dataset.curr);
+      renderRbControls();
+      rbQuery();
+    });
+  });
+
+  const periodRow = (elId, periods) => {
+    const el = document.getElementById(elId);
+    el.innerHTML = (periods || []).map(p => {
+      const active = (p.prev_week === rb.prevWeek && p.curr_week === rb.currWeek) ? 'active' : '';
+      return `<div class="week-btn ${active}" data-prev="${p.prev_week}" data-curr="${p.curr_week}">${escapeHtml(p.label)}</div>`;
+    }).join('');
+    el.querySelectorAll('.week-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        rb.prevWeek = parseInt(btn.dataset.prev);
+        rb.currWeek = parseInt(btn.dataset.curr);
+        renderRbControls();
+        rbQuery();
+      });
+    });
+  };
+  periodRow('rbMonthTabs', rb.months);
+  periodRow('rbQuarterTabs', rb.quarters);
+
+  renderTabRow('rbTeamTabs', rb.teams, 'team', 'All Merchants');
+  renderTabRow('rbSegmentTabs', rb.segments, 'segment', 'All');
+  renderTabRow('rbRhTabs', rb.rhs, 'rh', 'All Merchants');
+
+  const productGroup = document.getElementById('rbProductGroup');
+  if (rb.products && rb.products.length) {
+    productGroup.style.display = 'flex';
+    renderTabRow('rbProductTabs', rb.products, 'product', 'All');
+  } else {
+    productGroup.style.display = 'none';
+  }
+
+  renderDropdown('rbCitySelect', rb.cities, 'city', 'All');
+  renderDropdown('rbRegionSelect', rb.regions, 'region', 'All');
+}
+
+document.querySelectorAll('#rbMetricTabs .metric-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    rb.metric = tab.dataset.metric;
+    renderRbControls();
+    rbQuery();
+  });
+});
+document.getElementById('rbCitySelect').addEventListener('change', (e) => {
+  rb.city = e.target.value;
+  rbQuery();
+});
+document.getElementById('rbRegionSelect').addEventListener('change', (e) => {
+  rb.region = e.target.value;
+  rbQuery();
+});
+
+function currentFilterPayload() {
+  return {
+    rb_session_id: rb.sessionId,
+    prev_week: rb.prevWeek,
+    curr_week: rb.currWeek,
+    metric: rb.metric,
+    team: rb.team,
+    segment: rb.segment,
+    rh: rb.rh,
+    city: rb.city,
+    region: rb.region,
+    product: rb.product,
+  };
+}
+
+async function rbQuery() {
+  const bodyEl = document.getElementById('rbBody');
+  bodyEl.innerHTML = '<div class="rb-loading">Computing Enterprise Metrics…</div>';
+  try {
+    const res = await fetch('/api/rb/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentFilterPayload())
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Query failed');
+    renderRbBody(data);
+    loadTrend();
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function loadTrend() {
+  try {
+    const res = await fetch('/api/rb/trend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentFilterPayload())
+    });
+    const data = await res.json();
+    if (!res.ok) return;
+    renderTrendChart(data.points, data.metric);
+  } catch (e) { }
+}
+
+function renderTrendChart(points, metric) {
+  const canvas = document.getElementById('rbTrendCanvas');
+  if (!canvas || !points || !points.length) return;
+  const labels = points.map(p => 'W' + p.week);
+  const values = points.map(p => p.value);
+  if (rbTrendChart) rbTrendChart.destroy();
+  rbTrendChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: { revenue: 'Revenue', merchants: 'Merchants', stores: 'Stores' }[metric] || metric,
+        data: values,
+        borderColor: '#2563EB',
+        backgroundColor: (context) => {
+          const ctx = context.chart.ctx;
+          const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+          gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
+          gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+          return gradient;
+        },
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4,
+        pointBackgroundColor: '#FFFFFF',
+        pointBorderColor: '#2563EB',
+        pointBorderWidth: 2,
+        borderWidth: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { 
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0F172A',
+          padding: 12,
+          titleFont: { family: 'Inter', size: 13 },
+          bodyFont: { family: 'JetBrains Mono', size: 14 }
+        }
+      },
+      scales: { 
+        y: { beginAtZero: true, grid: { color: '#E2E8F0', drawBorder: false }, border: { dash: [4,4] } }, 
+        x: { grid: { display: false }, border: { display: false } } 
+      }
+    }
+  });
+}
+
+document.getElementById('rbAskBtn').addEventListener('click', rbAsk);
+document.getElementById('rbPromptInput').addEventListener('keydown', e => { if (e.key === 'Enter') rbAsk(); });
+
+async function rbAsk() {
+  const prompt = document.getElementById('rbPromptInput').value.trim();
+  if (!prompt || !rb.sessionId) return;
+  const apiKey = rbApiKeyInput.value.trim();
+  if (!apiKey) { alert('Add your API key in the Workspace Settings first.'); return; }
+
+  const bodyEl = document.getElementById('rbBody');
+  bodyEl.innerHTML = '<div class="rb-loading">Generating AI Analysis…</div>';
+
+  try {
+    const res = await fetch('/api/rb/nl_query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rb_session_id: rb.sessionId,
+        prompt,
+        provider: rbProviderSelect.value,
+        api_key: apiKey,
+        model: rbModelInput.value.trim(),
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+    if (data.parsed_intent) {
+      rb.metric = data.parsed_intent.metric || 'revenue';
+      rb.team = data.parsed_intent.team;
+      rb.segment = data.parsed_intent.segment;
+      rb.rh = data.parsed_intent.rh || 'All Merchants';
+      rb.city = data.parsed_intent.city || 'All';
+      rb.region = data.parsed_intent.region || 'All';
+      rb.product = data.parsed_intent.product || 'All';
+      rb.prevWeek = data.parsed_intent.prev_week;
+      rb.currWeek = data.parsed_intent.curr_week;
+      renderRbControls();
+    }
+    renderRbBody(data);
+    loadTrend();
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="error">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+async function rbExport() {
+  const btn = document.getElementById('rbExportBtn');
+  if (!btn) return;
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<i class="ph ph-spinner-gap" style="animation: spin 1s linear infinite;"></i> Exporting…';
+  try {
+    const res = await fetch('/api/rb/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(currentFilterPayload())
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.detail || 'Export failed');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dotdash_export_W${rb.prevWeek}_W${rb.currWeek}_${rb.metric}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = original;
+  }
+}
+
+function fmtInr(n) {
+  if (n === null || n === undefined) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1e7) return (n / 1e7).toFixed(2) + 'Cr';
+  if (abs >= 1e5) return (n / 1e5).toFixed(2) + 'L';
+  if (abs >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return n.toFixed(0);
+}
+
+function renderRbBody(data) {
+  const bodyEl = document.getElementById('rbBody');
+  const metric = data.metric || 'revenue';
+  const isRevenue = metric === 'revenue';
+  const fmtVal = (n) => isRevenue ? '₹' + fmtInr(n) : Math.round(n).toLocaleString();
+  const metricLabel = { revenue: 'Revenue', merchants: 'Merchants', stores: 'Stores' }[metric];
+
+  // Calculate Growth
+  const prev = data.previous_week_total || 0;
+  const curr = data.current_week_total || 0;
+  const growthPct = prev ? (((curr - prev) / prev) * 100).toFixed(1) : 0;
+  const growthSign = growthPct >= 0 ? '+' : '';
+  const growthClass = growthPct >= 0 ? 'text-success' : 'text-danger';
+  const sparkGood = `<svg width="50" height="15" viewBox="0 0 50 15" fill="none"><path d="M0 12L15 8L30 10L50 2" stroke="var(--success)" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const sparkBad = `<svg width="50" height="15" viewBox="0 0 50 15" fill="none"><path d="M0 2L15 10L30 8L50 12" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>`;
+
+  const tableCols = data.table_rows.length ? Object.keys(data.table_rows[0]) : [];
+  const tableHtml = data.table_rows.length ? `
+    <div class="table-wrapper">
+      <div class="table-header-toolbar">
+         <h4 style="margin:0; font-family: 'Space Grotesk', sans-serif;">Data View</h4>
+         <div style="display:flex; gap:12px;">
+            <div class="search-bar" style="width: 220px; background: #FFFFFF; border: 1px solid var(--line);">
+               <i class="ph ph-magnifying-glass"></i>
+               <input type="text" placeholder="Search rows...">
+            </div>
+         </div>
+      </div>
+      <div class="table-scroll">
+        <table class="enterprise-table">
+          <thead><tr>${tableCols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+          <tbody>${data.table_rows.slice(0, 50).map(row => `
+            <tr>${tableCols.map(c => {
+              let v = row[c];
+              if (typeof v === 'number' && ['current_week', 'previous_week'].includes(c) && isRevenue) {
+                v = '₹' + fmtInr(v);
+              } else if (typeof v === 'number' && ['reduction', 'new_opportunities'].includes(c)) {
+                if (c === 'reduction' && v > 0) return `<td><span class="status-badge status-churn">-${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
+                if (c === 'new_opportunities' && v > 0) return `<td><span class="status-badge status-active">+${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
+                v = isRevenue ? '₹' + fmtInr(v) : (v ? v : '');
+              }
+              return `<td>${escapeHtml(String(v ?? ''))}</td>`;
+            }).join('')}</tr>
+          `).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+    ${data.table_rows.length > 50 ? `<div style="margin-top:12px; font-size:12px; color:var(--ink-soft);">Showing top 50 rows.</div>` : ''}
+  ` : '<div class="panel"><div style="color:var(--ink-soft); text-align:center; padding: 32px;">No merchants match this selection.</div></div>';
+
+  bodyEl.innerHTML = `
+    
+    <div class="kpi-grid">
+      
+      <div class="kpi-premium-card">
+        <div class="kpi-header">
+          <div class="kpi-title"><i class="ph ph-trend-up"></i> Current ${metricLabel}</div>
+          <div>${growthPct >= 0 ? sparkGood : sparkBad}</div>
+        </div>
+        <div class="kpi-value">${fmtVal(data.current_week_total)}</div>
+        <div class="kpi-meta"><span class="badge ${growthClass}">${growthSign}${growthPct}%</span> vs prev week</div>
+      </div>
+
+      <div class="kpi-premium-card">
+        <div class="kpi-header">
+          <div class="kpi-title"><i class="ph ph-users"></i> Active Merchants</div>
+        </div>
+        <div class="kpi-value">${data.merchant_count.toLocaleString()}</div>
+        <div class="kpi-meta"><span class="badge text-success">Healthy</span> portfolio count</div>
+      </div>
+
+      <div class="kpi-premium-card">
+        <div class="kpi-header">
+          <div class="kpi-title"><i class="ph ph-storefront"></i> Stores</div>
+        </div>
+        <div class="kpi-value">${data.store_count !== null ? data.store_count.toLocaleString() : '—'}</div>
+        <div class="kpi-meta"><span class="badge text-success">Stable</span> operations</div>
+      </div>
+
+      <div class="kpi-premium-card" style="background: linear-gradient(135deg, #1E293B, #0F172A); color: white; border: none;">
+        <div class="kpi-header">
+          <div class="kpi-title" style="color: #94A3B8;"><i class="ph ph-sparkle text-purple"></i> AI Score</div>
+        </div>
+        <div class="kpi-value" style="color: white;">94<span style="font-size:20px; color:#64748B;">/100</span></div>
+        <div class="kpi-meta" style="color: #94A3B8;"><span class="badge" style="background: rgba(124,58,237,0.2); color: #A78BFA;">Excellent</span> system health</div>
+      </div>
+
+    </div>
+
+    <h3 class="section-title">Metrics Bridge</h3>
+    <div class="waterfall-bridge">
+      <div class="wf-step">
+        <div class="wf-card">
+          <span class="wf-label">Previous Week</span>
+          <span class="wf-val">${fmtVal(data.previous_week_total)}</span>
+        </div>
+      </div>
+      <i class="ph ph-arrow-right wf-arrow"></i>
+      <div class="wf-step">
+        <div class="wf-card wf-new">
+          <span class="wf-label text-success">New Acquired</span>
+          <span class="wf-val text-success">+${fmtVal(data.new_opportunities)}</span>
+        </div>
+      </div>
+      <i class="ph ph-arrow-right wf-arrow"></i>
+      <div class="wf-step">
+        <div class="wf-card wf-lost">
+          <span class="wf-label text-danger">Reduction</span>
+          <span class="wf-val text-danger">-${fmtVal(data.reduction)}</span>
+        </div>
+      </div>
+      <i class="ph ph-arrow-right wf-arrow"></i>
+      <div class="wf-step">
+        <div class="wf-card wf-current">
+          <span class="wf-label text-primary">Current Week</span>
+          <span class="wf-val text-primary">${fmtVal(data.current_week_total)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="margin-bottom: 32px;">
+      <h3 class="section-title" style="margin-top:0;">${metricLabel} Trend</h3>
+      <div class="trend-wrap"><canvas id="rbTrendCanvas"></canvas></div>
+    </div>
+
+    <h3 class="section-title">Regional Head Performance</h3>
+    <div class="rh-grid" style="margin-bottom: 32px;">
+      ${data.rh_breakdown.map(r => `
+        <div class="rh-premium-card">
+          <div class="rh-top">
+            <div class="rh-avatar"><i class="ph ph-user"></i></div>
+            <div class="rh-info">
+              <div class="rh-name" title="${escapeHtml(r.rh)}">${escapeHtml(r.rh)}</div>
+              <div class="rh-stats">${r.merchants} Mx</div>
+            </div>
+            <div class="rh-val">${fmtVal(r.current)}</div>
+          </div>
+          <div class="rh-progress">
+            <div class="rh-progress-bar" style="width:${r.bar_pct}%"></div>
+          </div>
+        </div>
+      `).join('') || '<div style="color:var(--ink-soft);">No data for this selection.</div>'}
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+      <h3 class="section-title" style="margin:0;">Data Breakdown</h3>
+      <button class="ghost" id="rbExportBtn"><i class="ph ph-download-simple"></i> Export .xlsx</button>
+    </div>
+    ${tableHtml}
+  `;
+
+  const exportBtn = document.getElementById('rbExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', rbExport);
+}
+
+// ============================================================
+// Generic dashboard: chart rendering + natural-language Q&A
+// ============================================================
+function buildGenericChart(canvas, chartType, rows, xKey, yKey) {
+  if (!rows || !rows.length) return;
+  xKey = xKey || Object.keys(rows[0])[0];
+  yKey = yKey || Object.keys(rows[0])[1] || Object.keys(rows[0])[0];
+  const labels = rows.map(r => r[xKey]);
+  const values = rows.map(r => Number(r[yKey]) || 0);
+  
+  const type = chartType === 'pie' ? 'pie' : (chartType === 'scatter' ? 'scatter' : (chartType === 'line' ? 'line' : 'bar'));
+
+  new Chart(canvas, {
+    type: type,
+    data: {
+      labels: labels,
+      datasets: [{
+        label: yKey,
+        data: values,
+        backgroundColor: (context) => {
+          if(type === 'pie') return ['#2563EB', '#06B6D4', '#7C3AED', '#22C55E', '#F59E0B', '#EF4444'];
+          const ctx = context.chart.ctx;
+          const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+          gradient.addColorStop(0, 'rgba(37, 99, 235, 0.8)');
+          gradient.addColorStop(1, 'rgba(37, 99, 235, 0.2)');
+          return gradient;
+        },
+        borderColor: type === 'pie' ? '#ffffff' : '#2563EB',
+        borderWidth: type === 'line' ? 3 : 1,
+        borderRadius: type === 'bar' ? 6 : 0,
+        tension: 0.4,
+        fill: type === 'line'
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: type === 'pie' } },
+      scales: type === 'pie' ? {} : { 
+        y: { beginAtZero: true, grid: { color: '#F1F5F9' }, border: { display: false } }, 
+        x: { grid: { display: false }, border: { display: false } } 
+      }
+    }
+  });
+}
+
+document.getElementById('rbGenericAskBtn').addEventListener('click', genericAsk);
+document.getElementById('rbGenericPromptInput').addEventListener('keydown', e => { if (e.key === 'Enter') genericAsk(); });
+
+async function genericAsk() {
+  const input = document.getElementById('rbGenericPromptInput');
+  const question = input.value.trim();
+  if (!question || !rb.sessionId) return;
+  const apiKey = rbApiKeyInput.value.trim();
+  if (!apiKey) { alert('Add your API key in the Workspace Settings first.'); return; }
+  input.value = '';
+
+  const log = document.getElementById('rbGenericLog');
+  const exDiv = document.createElement('div');
+  exDiv.style.borderTop = '1px solid var(--line)';
+  exDiv.style.paddingTop = '24px';
+  exDiv.style.marginTop = '24px';
+  exDiv.innerHTML = `<div style="font-family:var(--mono); font-weight:600; color:var(--primary); margin-bottom:12px;"><i class="ph ph-user"></i> ${escapeHtml(question)}</div><div class="generic-answer" style="font-size:15px; color:var(--ink); line-height:1.6; margin-bottom:16px;">Thinking…</div>`;
+  log.prepend(exDiv);
+
+  try {
+    const res = await fetch('/api/generic/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rb_session_id: rb.sessionId,
+        prompt: question,
+        provider: rbProviderSelect.value,
+        api_key: apiKey,
+        model: rbModelInput.value.trim(),
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Request failed');
+
+    exDiv.querySelector('.generic-answer').innerHTML = `<i class="ph ph-sparkle text-purple"></i> ` + (data.explanation || '(no explanation returned)');
+    if (data.data && Array.isArray(data.data) && data.data.length) {
+      if (data.chart_type && data.chart_type !== 'none' && data.chart_type !== 'table') {
+        const wrap = document.createElement('div');
+        wrap.style.maxWidth = '600px';
+        wrap.style.padding = '24px';
+        wrap.style.background = '#FFFFFF';
+        wrap.style.border = '1px solid var(--line)';
+        wrap.style.borderRadius = 'var(--radius-lg)';
+        wrap.style.marginTop = '16px';
+        wrap.style.boxShadow = 'var(--shadow-sm)';
+        
+        const canvas = document.createElement('canvas');
+        wrap.appendChild(canvas);
+        exDiv.appendChild(wrap);
+        buildGenericChart(canvas, data.chart_type, data.data, data.chart_x, data.chart_y);
+      } else {
+        const cols = Object.keys(data.data[0]);
+        const table = document.createElement('div');
+        table.className = 'table-wrapper';
+        table.style.marginTop = '16px';
+        table.innerHTML = `
+          <div class="table-scroll">
+            <table class="enterprise-table">
+              <thead><tr>${cols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
+              <tbody>${data.data.slice(0, 25).map(r => `<tr>${cols.map(c => `<td>${escapeHtml(String(r[c] ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody>
+            </table>
+          </div>
+        `;
+        exDiv.appendChild(table);
+      }
+    }
+  } catch (err) {
+    exDiv.querySelector('.generic-answer').innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
+  }
+}
+</script>
+</body>
+</html>
