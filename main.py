@@ -7,7 +7,7 @@ import time
 import asyncio
 import datetime
 from collections import OrderedDict
-
+import warnings
 import requests
 import numpy as np
 import pandas as pd
@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 app = FastAPI(title="DotDash")
 
 app.add_middleware(
@@ -1161,6 +1162,3 @@ async def generic_ask(payload: dict = Body(...)):
 
 # Serve frontend (must be mounted last so /api routes take priority)
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
-"""
-HTML Output Below
-"""
