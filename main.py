@@ -2,6 +2,7 @@ import os
 import io
 import re
 import json
+import math
 import uuid
 import time
 import asyncio
@@ -114,6 +115,26 @@ def health():
     return {"status": "ok"}
 
 
+def _json_safe(obj):
+    """Recursively replaces NaN/Infinity with None.
+
+    Python's json.dumps allows NaN/Infinity by default and happily emits the
+    literal tokens `NaN`, `Infinity`, `-Infinity` — which are NOT valid JSON.
+    JS's JSON.parse() rejects them outright, so any response containing one
+    of these (e.g. a stray unparseable numeric cell, or a 0/0 edge case)
+    would make the frontend's `await res.json()` throw on an otherwise
+    perfectly fine request. Every dict returned to the client should be run
+    through this first.
+    """
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 # ---------------------------------------------------------------------------
 # Auto-detects a weekly merchant revenue tracking sheet (columns like
 # W0, W1, W_2... + Regional Head) inside a multi-sheet workbook, and
@@ -164,7 +185,10 @@ def find_weekly_sheet(wb):
         ws = wb[sn]
         headers = [(c, str(ws.cell(row=header_row, column=c).value or "").strip()) for c in range(1, ws.max_column + 1)]
         team_col = next((c for c, h in headers if h.lower() == "team"), None)
-        merchant_col = next((c for c, h in headers if h.lower() == "merchant name"), None)
+        # Substring match (not exact-only) so headers like "Merchant Name (Legal)"
+        # or "MerchantName" still qualify — keeps this consistent with detect_columns,
+        # which already matches "merchant name" as a substring.
+        merchant_col = next((c for c, h in headers if "merchant name" in h.lower()), None)
         if not merchant_col:
             continue
 
@@ -181,6 +205,13 @@ def find_weekly_sheet(wb):
 
         uniqueness = len(set(names)) / total if total else 0
         scored.append((len(teams) >= 4, uniqueness, len(teams), total, sn, header_row))
+
+    if not scored:
+        # None of the multi-candidate sheets had a usable merchant column —
+        # fall back to the first raw candidate instead of crashing. Downstream
+        # parsing will still raise a clean, catchable error if it truly can't
+        # find the required columns.
+        return candidates[0]
 
     # Prefer sheets with a real spread of teams (>=4), then cleanest data
     # (least duplicate merchant rows), then more distinct teams, then more rows.
@@ -225,6 +256,12 @@ def _normalize_bridge_df(df: pd.DataFrame, week_cols) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     if "store" in df.columns:
         df["store"] = pd.to_numeric(df["store"], errors="coerce").fillna(0)
+    # "received"/"spillover" are summed directly in compute_metric_bridge without
+    # any numeric coercion beforehand — a single blank/text cell in either column
+    # left the column as object dtype and made .sum() throw (can't add int + None).
+    for numeric_field in ["received", "spillover"]:
+        if numeric_field in df.columns:
+            df[numeric_field] = pd.to_numeric(df[numeric_field], errors="coerce").fillna(0)
     for txt_field in ["team", "segment", "bucket", "city", "region", "kam", "rh", "merchant", "product"]:
         if txt_field in df.columns:
             df[txt_field] = df[txt_field].fillna("Unknown").astype(str).str.strip()
@@ -379,6 +416,7 @@ def build_generic_overview(df: pd.DataFrame, max_widgets: int = 8):
                     "max": round(float(s.max()), 2), "sum": round(float(s.sum()), 2),
                 },
             })
+            widgets[-1] = _json_safe(widgets[-1])
         else:
             vc = s.astype(str).value_counts().head(8)
             data = [{"label": str(idx), "value": int(v)} for idx, v in vc.items()]
@@ -403,8 +441,10 @@ def load_workbook_smart(content: bytes) -> dict:
             parsed = load_revenue_bridge_workbook(wb, sheet_name, header_row)
             parsed["dashboard_type"] = "revenue_bridge"
             return parsed
-        except ValueError:
+        except Exception:
             pass  # matched the pattern loosely but couldn't fully parse — fall through
+            # to the generic dashboard rather than raising (catches ValueError plus
+            # any unexpected KeyError/IndexError from odd real-world sheet layouts)
 
     parsed = load_generic_workbook(wb)
     parsed["dashboard_type"] = "generic"
@@ -628,7 +668,7 @@ def compute_metric_bridge(df: pd.DataFrame, prev_week: int, curr_week: int, filt
     table_df = table_df.sort_values("current_week", ascending=False).head(500)
     table_rows = json.loads(table_df.to_json(orient="records"))
 
-    return {
+    result = {
         "metric": metric,
         "previous_week_total": round(previous_val, 2),
         "new_opportunities": round(new_val, 2),
@@ -642,6 +682,7 @@ def compute_metric_bridge(df: pd.DataFrame, prev_week: int, curr_week: int, filt
         "rh_breakdown": rh_breakdown,
         "table_rows": table_rows,
     }
+    return _json_safe(result)
 
 
 def compute_trend(df: pd.DataFrame, weeks: list, filters: dict, metric: str = "revenue"):
@@ -661,7 +702,7 @@ def compute_trend(df: pd.DataFrame, weeks: list, filters: dict, metric: str = "r
         else:  # stores
             val = float(filtered.loc[active, "store"].sum()) if "store" in filtered.columns else float(active.sum())
         points.append({"week": wk, "value": round(val, 2)})
-    return points
+    return _json_safe(points)
 
 
 def tab_counts(df: pd.DataFrame, field: str, week_col: str):
@@ -740,7 +781,7 @@ def _shared_summary(parsed: dict, rb_session_id: str) -> dict:
             "columns": parsed["columns"],
             "overview_widgets": parsed["overview_widgets"],
         })
-    return base
+    return _json_safe(base)
 
 
 async def broadcast_shared_update(summary: dict):
@@ -1150,14 +1191,14 @@ async def generic_ask(payload: dict = Body(...)):
             "chart_type": "none", "data": None, "code": code,
         }
 
-    return {
+    return _json_safe({
         "explanation": plan.get("explanation", ""),
         "chart_type": plan.get("chart_type", "none"),
         "chart_x": plan.get("chart_x"),
         "chart_y": plan.get("chart_y"),
         "data": result_json,
         "code": code,
-    }
+    })
 
 
 # Serve frontend (must be mounted last so /api routes take priority)
