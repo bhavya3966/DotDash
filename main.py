@@ -5,8 +5,11 @@ import json
 import math
 import uuid
 import time
+import pickle
+import sqlite3
 import asyncio
 import datetime
+from contextlib import closing
 from collections import OrderedDict
 import warnings
 import requests
@@ -28,16 +31,97 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory store: rb_session_id -> {"df": DataFrame, "sheet_name": str, "weeks": [...],
-#                                     "query_cache": {...}}
-# "shared" is a fixed key: a team-wide dashboard that everyone sees the same data for,
-# refreshed from a Google Sheet link rather than a personal file upload.
-RB_SESSIONS = {}
+# =============================================================================
+# SESSION STORAGE
+# -----------------------------------------------------------------------------
+# THE BUG THIS FIXES: sessions used to live in a plain Python dict
+# (`RB_SESSIONS = {}`) in process memory. Uvicorn/Gunicorn workers, container
+# restarts, and autoscaled replicas each have their OWN copy of that dict.
+# A request to /api/rb/shared/set could land on worker A (which then "knows"
+# about the session) while the very next request from the same browser lands
+# on worker B (which has never heard of it) -> "Session not found. Upload the
+# sheet first." even though the sheet was just connected.
+#
+# THE FIX: sessions are persisted to a local SQLite file that every worker on
+# the same machine reads from and writes to, so session state is consistent
+# no matter which worker handles which request, and it survives restarts.
+#
+# CAVEAT: if you deploy multiple SEPARATE machines/containers (not just
+# multiple workers on one machine) behind a load balancer, each machine needs
+# to see the same SQLite file (e.g. a shared volume) — or better, swap this
+# out for a real shared store like Redis or Postgres. The functions below are
+# intentionally isolated so that swap only touches this one section.
+# =============================================================================
+
 SHARED_SESSION_ID = "shared"
 SHARED_AUTO_REFRESH_SECONDS = 30
+DB_PATH = os.environ.get("DOTDASH_DB_PATH", os.path.join(os.path.dirname(__file__), "dotdash_sessions.db"))
 
-# Subscribers for the shared dashboard's Server-Sent Events stream.
+
+def _get_conn():
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")  # allows concurrent readers + one writer
+    return conn
+
+
+def _init_db():
+    with closing(_get_conn()) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                data BLOB NOT NULL,
+                updated_at REAL NOT NULL
+            )
+        """)
+        conn.commit()
+
+
+_init_db()
+
+
+def session_set(session_id: str, payload: dict) -> None:
+    """Persists a session dict (which may contain a DataFrame) to SQLite,
+    visible to every worker process immediately."""
+    payload = dict(payload)
+    payload.setdefault("version", time.time())
+    blob = pickle.dumps(payload)
+    with closing(_get_conn()) as conn:
+        conn.execute(
+            "INSERT INTO sessions (session_id, data, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(session_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+            (session_id, blob, time.time()),
+        )
+        conn.commit()
+
+
+def session_get(session_id: str):
+    """Returns the session dict, or None if it doesn't exist."""
+    with closing(_get_conn()) as conn:
+        row = conn.execute("SELECT data FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
+    return pickle.loads(row[0]) if row else None
+
+
+def session_delete(session_id: str) -> None:
+    with closing(_get_conn()) as conn:
+        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+
+
+# Subscribers for the shared dashboard's Server-Sent Events stream. This is
+# necessarily per-process (an open HTTP connection can't be handed to another
+# worker) — each worker pushes updates only to the browsers connected to IT.
+# Fine in practice since every worker's auto-refresh loop independently keeps
+# its own SSE clients current from the same underlying SQLite session.
 SHARED_SUBSCRIBERS: list = []
+
+# Query-result cache: process-local and intentionally NOT persisted to
+# SQLite. Persisting it would mean re-pickling/writing a potentially large
+# blob on every single query, which defeats the point of caching. Instead
+# it's keyed on the session's "version" stamp (set whenever a session is
+# written), so a cache miss just recomputes — cheap relative to a network
+# round trip, and always correct even across workers/restarts.
+_QUERY_CACHE: "OrderedDict" = OrderedDict()
+_QUERY_CACHE_MAX = 1000
 
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-5",
@@ -796,7 +880,7 @@ async def _refresh_shared_session() -> dict:
     """Core refresh logic shared by the manual endpoint and the background
     auto-refresh loop. Runs the blocking network/parse work in a thread so
     it never stalls the event loop for other requests."""
-    session = RB_SESSIONS.get(SHARED_SESSION_ID)
+    session = session_get(SHARED_SESSION_ID)
     if not session or not session.get("source_url"):
         raise ValueError("No shared Google Sheet is linked yet.")
 
@@ -804,18 +888,27 @@ async def _refresh_shared_session() -> dict:
     parsed = await asyncio.to_thread(load_workbook_smart, content)
     parsed["source_url"] = session["source_url"]
     parsed["last_refreshed"] = time.time()
-    parsed["query_cache"] = {}
-    RB_SESSIONS[SHARED_SESSION_ID] = parsed
+    parsed["version"] = parsed["last_refreshed"]
+    session_set(SHARED_SESSION_ID, parsed)
     return parsed
 
 
 async def _auto_refresh_loop():
     """Keeps the shared dashboard fresh in the background so viewers don't
     have to trigger a refresh themselves — pushed out over SSE as soon as
-    new data lands."""
+    new data lands.
+
+    Every worker process runs this loop, but before doing an actual network
+    fetch each one checks SQLite for a very recent refresh timestamp — if a
+    sibling worker just refreshed, this tick is skipped, which avoids every
+    worker hitting the Google Sheets export URL at the same moment."""
     while True:
         await asyncio.sleep(SHARED_AUTO_REFRESH_SECONDS)
         try:
+            existing = session_get(SHARED_SESSION_ID)
+            if existing and existing.get("last_refreshed") and \
+                    time.time() - existing["last_refreshed"] < SHARED_AUTO_REFRESH_SECONDS * 0.8:
+                continue  # a sibling worker refreshed moments ago; nothing to do yet
             parsed = await _refresh_shared_session()
         except Exception:
             continue  # keep the last good data; try again next tick
@@ -831,7 +924,7 @@ async def _on_startup():
 @app.get("/api/rb/shared/status")
 async def rb_shared_status():
     """Called on page load. Returns the team-wide dashboard if one has been set up, else null."""
-    session = RB_SESSIONS.get(SHARED_SESSION_ID)
+    session = session_get(SHARED_SESSION_ID)
     if not session:
         return {"active": False}
     return {"active": True, **_shared_summary(session, SHARED_SESSION_ID)}
@@ -846,7 +939,7 @@ async def rb_shared_stream():
         q = asyncio.Queue(maxsize=5)
         SHARED_SUBSCRIBERS.append(q)
         try:
-            session = RB_SESSIONS.get(SHARED_SESSION_ID)
+            session = session_get(SHARED_SESSION_ID)
             if session:
                 yield f"data: {json.dumps(_shared_summary(session, SHARED_SESSION_ID))}\n\n"
             while True:
@@ -876,8 +969,8 @@ async def rb_shared_set(payload: dict = Body(...)):
 
     parsed["source_url"] = url
     parsed["last_refreshed"] = time.time()
-    parsed["query_cache"] = {}
-    RB_SESSIONS[SHARED_SESSION_ID] = parsed
+    parsed["version"] = parsed["last_refreshed"]
+    session_set(SHARED_SESSION_ID, parsed)
     summary = _shared_summary(parsed, SHARED_SESSION_ID)
     await broadcast_shared_update(summary)
     return summary
@@ -907,19 +1000,23 @@ async def rb_upload(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    parsed["query_cache"] = {}
+    parsed["version"] = time.time()
     rb_session_id = str(uuid.uuid4())
-    RB_SESSIONS[rb_session_id] = parsed
+    session_set(rb_session_id, parsed)
     return _shared_summary(parsed, rb_session_id)
 
 
-def _cached_bridge(session: dict, prev_week: int, curr_week: int, filters: dict, metric: str):
-    cache = session.setdefault("query_cache", {})
-    key = (int(prev_week), int(curr_week), metric, tuple(sorted(filters.items())))
-    if key in cache:
-        return cache[key]
+def _cached_bridge(session_id: str, session: dict, prev_week: int, curr_week: int, filters: dict, metric: str):
+    version = session.get("version", 0)
+    key = (session_id, version, int(prev_week), int(curr_week), metric, tuple(sorted(filters.items())))
+    if key in _QUERY_CACHE:
+        _QUERY_CACHE.move_to_end(key)
+        return _QUERY_CACHE[key]
     result = compute_metric_bridge(session["df"], int(prev_week), int(curr_week), filters, metric)
-    cache[key] = result
+    _QUERY_CACHE[key] = result
+    _QUERY_CACHE.move_to_end(key)
+    if len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
+        _QUERY_CACHE.popitem(last=False)
     return result
 
 
@@ -938,16 +1035,16 @@ async def rb_query(payload: dict = Body(...)):
         "rh": payload.get("rh", "All Merchants"),
     }
 
-    if not rb_session_id or rb_session_id not in RB_SESSIONS:
+    session = session_get(rb_session_id) if rb_session_id else None
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found. Upload the sheet first.")
-    session = RB_SESSIONS[rb_session_id]
     if session.get("dashboard_type") != "revenue_bridge":
         raise HTTPException(status_code=400, detail="This sheet doesn't match the weekly revenue bridge format. Use /api/generic/ask instead.")
     if prev_week is None or curr_week is None:
         raise HTTPException(status_code=400, detail="prev_week and curr_week are required.")
 
     try:
-        result = _cached_bridge(session, prev_week, curr_week, filters, metric)
+        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -967,9 +1064,9 @@ async def rb_trend(payload: dict = Body(...)):
         "rh": payload.get("rh", "All Merchants"),
     }
 
-    if not rb_session_id or rb_session_id not in RB_SESSIONS:
+    session = session_get(rb_session_id) if rb_session_id else None
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found. Upload the sheet first.")
-    session = RB_SESSIONS[rb_session_id]
     if session.get("dashboard_type") != "revenue_bridge":
         raise HTTPException(status_code=400, detail="Trend view is only available for the weekly revenue bridge format.")
 
@@ -992,16 +1089,16 @@ async def rb_export(payload: dict = Body(...)):
         "rh": payload.get("rh", "All Merchants"),
     }
 
-    if not rb_session_id or rb_session_id not in RB_SESSIONS:
+    session = session_get(rb_session_id) if rb_session_id else None
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found. Upload the sheet first.")
-    session = RB_SESSIONS[rb_session_id]
     if session.get("dashboard_type") != "revenue_bridge":
         raise HTTPException(status_code=400, detail="Export is only available for the weekly revenue bridge format.")
     if prev_week is None or curr_week is None:
         raise HTTPException(status_code=400, detail="prev_week and curr_week are required.")
 
     try:
-        result = _cached_bridge(session, prev_week, curr_week, filters, metric)
+        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1016,7 +1113,6 @@ async def rb_export(payload: dict = Body(...)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
-
 
 def fuzzy_match_category(value, options: list, all_label: str, threshold: int = 70) -> str:
     """Corrects an LLM-parsed category name against the sheet's actual values.
@@ -1034,6 +1130,48 @@ def fuzzy_match_category(value, options: list, all_label: str, threshold: int = 
     if match and match[1] >= threshold:
         return match[0]
     return all_label
+
+def build_periods(weeks: list, weeks_per_month: int = 4, weeks_per_quarter: int = 13):
+    """
+    Groups sequential week numbers into Month/Quarter buckets.
+    Safely calculates offsets regardless of starting week (e.g. W40, W1, or YYYYWW).
+    """
+    weeks = sorted(weeks)
+    months, quarters = {}, {}
+    if not weeks:
+        return [], []
+        
+    # Offset ensures calculations align cleanly even if data starts mid-year (e.g. Week 14)
+    offset = 0 if 0 in weeks else 1
+    
+    for w in weeks:
+        w_adj = w - offset
+        
+        # Handle large formatted weeks (e.g. 202401 for 2024 Week 1)
+        if w > 1000:
+            year = w // 100
+            week = w % 100
+            m_idx = f"{year}-M{((week - 1) // weeks_per_month) + 1}"
+            q_idx = f"{year}-Q{((week - 1) // weeks_per_quarter) + 1}"
+        else:
+            # Standard week groupings (Week 1-13 = Q1, Week 14-26 = Q2, etc.)
+            m_idx = (w_adj // weeks_per_month) + 1
+            q_idx = (w_adj // weeks_per_quarter) + 1
+            
+        months.setdefault(m_idx, []).append(w)
+        quarters.setdefault(q_idx, []).append(w)
+
+    month_list = [
+        {"label": f"Month {m}" if isinstance(m, int) else m, "prev_week": min(ws), "curr_week": max(ws)}
+        for m, ws in sorted(months.items())
+    ]
+    
+    quarter_list = [
+        {"label": f"Q{q}" if isinstance(q, int) else q, "prev_week": min(ws), "curr_week": max(ws)}
+        for q, ws in sorted(quarters.items())
+    ]
+    
+    return month_list, quarter_list
 
 
 RB_NL_SYSTEM_TEMPLATE = """You control a merchant revenue bridge dashboard. Output ONLY a JSON object (no markdown fences) with:
@@ -1063,9 +1201,10 @@ async def rb_nl_query(payload: dict = Body(...)):
     api_key = payload.get("api_key", "").strip()
     model = payload.get("model", "").strip()
 
-    if not rb_session_id or rb_session_id not in RB_SESSIONS:
+    session = session_get(rb_session_id) if rb_session_id else None
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found. Upload the sheet first.")
-    if RB_SESSIONS[rb_session_id].get("dashboard_type") != "revenue_bridge":
+    if session.get("dashboard_type") != "revenue_bridge":
         raise HTTPException(status_code=400, detail="This sheet doesn't match the weekly revenue bridge format. Use /api/generic/ask instead.")
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is empty.")
@@ -1074,7 +1213,6 @@ async def rb_nl_query(payload: dict = Body(...)):
     if not api_key:
         raise HTTPException(status_code=400, detail="Add your API key in the settings panel first.")
 
-    session = RB_SESSIONS[rb_session_id]
     df = session["df"]
     weeks = session["weeks"]
     months, quarters = build_periods(weeks)
@@ -1135,7 +1273,7 @@ async def rb_nl_query(payload: dict = Body(...)):
     curr_week = intent.get("curr_week", default_curr)
 
     try:
-        result = _cached_bridge(session, prev_week, curr_week, filters, metric)
+        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1151,9 +1289,9 @@ async def generic_ask(payload: dict = Body(...)):
     api_key = payload.get("api_key", "").strip()
     model = payload.get("model", "").strip()
 
-    if not rb_session_id or rb_session_id not in RB_SESSIONS:
+    session = session_get(rb_session_id) if rb_session_id else None
+    if session is None:
         raise HTTPException(status_code=404, detail="Session not found. Load a sheet first.")
-    session = RB_SESSIONS[rb_session_id]
     if session.get("dashboard_type") != "generic":
         raise HTTPException(status_code=400, detail="This is a revenue bridge sheet — use the week/team controls or the regular prompt box instead.")
     if not prompt:
