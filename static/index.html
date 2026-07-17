@@ -1,661 +1,298 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DotDash Analytics</title>
+<title>DotDash — Merchant Revenue Terminal</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/@phosphor-icons/web"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  :root {
-    /* Premium SaaS Palette */
-    --bg: #F8FAFC; 
+  /* ===========================================================
+     DOTDASH — Enterprise SaaS Theme
+     Clean, data-forward, efficient light/dark modes.
+     =========================================================== */
+  :root[data-theme="light"] {
+    --bg: #F8FAFC;
+    --bg-soft: #FFFFFF;
     --card-bg: #FFFFFF;
-    --ink: #0F172A; 
-    --ink-soft: #64748B; 
-    --line: #E2E8F0; 
-    --primary: #2563EB; 
-    --primary-soft: rgba(37, 99, 235, 0.1);
-    --secondary: #06B6D4;
-    --success: #22C55E;
-    --success-soft: rgba(34, 197, 94, 0.1);
-    --danger: #EF4444;
-    --danger-soft: rgba(239, 68, 68, 0.1);
+    --card-bg-alt: #F1F5F9;
+    --line: #E2E8F0;
+    --line-soft: #F8FAFC;
+    --ink: #0F172A;
+    --ink-soft: #475569;
+    --ink-faint: #94A3B8;
+
+    --accent: #2563EB; 
+    --accent-soft: rgba(37, 99, 235, 0.12);
+    --accent-line: rgba(37, 99, 235, 0.35);
+    
+    --teal: #0D9488;
+    --teal-soft: rgba(13, 148, 136, 0.12);
+    --success: #059669;
+    --success-soft: rgba(5, 150, 105, 0.12);
+    --danger: #DC2626;
+    --danger-soft: rgba(220, 38, 38, 0.12);
     --purple: #7C3AED;
+    --purple-soft: rgba(124, 58, 237, 0.12);
+
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-body: 'Inter', sans-serif;
     --mono: 'JetBrains Mono', monospace;
+
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-full: 999px;
+
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 6px rgba(0,0,0,0.05);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1);
+
+    --transition: all 0.15s ease;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0B0D12;
+    --bg-soft: #0F131A;
+    --card-bg: #151A22;
+    --card-bg-alt: #1A212B;
+    --line: #242C39;
+    --line-soft: #1C232D;
+    --ink: #ECEEF3;
+    --ink-soft: #8A93A3;
+    --ink-faint: #545E6E;
+
+    --accent: #3B82F6;
+    --accent-soft: rgba(59, 130, 246, 0.15);
+    --accent-line: rgba(59, 130, 246, 0.35);
     
-    /* Shadows & Radii */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
-    --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
+    --teal: #59D8CE;
+    --teal-soft: rgba(89, 216, 206, 0.15);
+    --success: #3ED598;
+    --success-soft: rgba(62, 213, 152, 0.15);
+    --danger: #FF6B6E;
+    --danger-soft: rgba(255, 107, 110, 0.15);
+    --purple: #A78BFA;
+    --purple-soft: rgba(167, 139, 250, 0.15);
     
-    /* Transitions */
-    --transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+    --shadow-md: 0 8px 20px rgba(0,0,0,0.35);
+    --shadow-lg: 0 16px 40px rgba(0,0,0,0.45);
   }
 
   * { box-sizing: border-box; }
-  
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+  }
+
   body {
     margin: 0;
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--font-body);
     min-height: 100vh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
   }
 
-  /* Layout Wrapper */
-  .app-container {
-    display: flex;
-    min-height: 100vh;
-  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  /* Sidebar */
+  .app-container { display: flex; min-height: 100vh; }
+
+  /* ---------- Sidebar ---------- */
   .sidebar {
-    width: 260px;
-    background: var(--card-bg);
-    border-right: 1px solid var(--line);
-    display: flex;
-    flex-direction: column;
-    padding: 24px 16px;
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    z-index: 50;
+    width: 240px; background: var(--bg-soft); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; padding: 24px 14px; position: sticky; top: 0; height: 100vh; z-index: 50;
   }
-  
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0 12px 32px;
-  }
-  .brand i {
-    font-size: 28px;
-    color: var(--primary);
-  }
-  .brand span {
-    font-family: 'Space Grotesk', sans-serif;
-    font-weight: 700;
-    font-size: 22px;
-    color: var(--ink);
-    letter-spacing: -0.02em;
-  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 10px 28px; }
+  .brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); flex-shrink: 0; }
+  .brand span { font-family: var(--font-display); font-weight: 700; font-size: 20px; color: var(--ink); letter-spacing: -0.01em; }
+  .brand small { display: block; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); letter-spacing: 0.05em; margin-top: 1px; }
 
-  .nav-links {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  
+  .nav-links { display: flex; flex-direction: column; gap: 2px; }
   .nav-links a {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
-    text-decoration: none;
-    color: var(--ink-soft);
-    font-weight: 500;
-    font-size: 14px;
-    border-radius: var(--radius-sm);
-    transition: var(--transition);
+    display: flex; align-items: center; gap: 12px; padding: 11px 12px; text-decoration: none;
+    color: var(--ink-soft); font-weight: 500; font-size: 14px; border-radius: var(--radius-sm);
+    transition: var(--transition); border: 1px solid transparent;
   }
-  .nav-links a i { font-size: 20px; }
-  .nav-links a:hover, .nav-links a.active {
-    background: var(--primary-soft);
-    color: var(--primary);
-  }
+  .nav-links a i { font-size: 18px; }
+  .nav-links a:hover { background: var(--card-bg); color: var(--ink); }
+  .nav-links a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-color: var(--accent-line); }
 
-  /* Main Content Area */
-  .main-wrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0; /* Important for flex children scrolling */
-  }
+  .sidebar-foot { margin-top: auto; padding: 12px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.02em; border-top: 1px solid var(--line-soft); padding-top: 16px; }
 
-  /* Top Navbar */
+  /* ---------- Main ---------- */
+  .main-wrapper { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
   .top-navbar {
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(12px);
-    border-bottom: 1px solid var(--line);
-    padding: 16px 32px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 40;
+    background: var(--bg-soft); border-bottom: 1px solid var(--line);
+    padding: 14px 32px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 40;
   }
+  .search-bar { display: flex; align-items: center; gap: 8px; background: var(--card-bg-alt); border: 1px solid var(--line); padding: 8px 16px; border-radius: var(--radius-full); width: 300px; }
+  .search-bar i { color: var(--ink-faint); font-size: 17px; }
+  .search-bar input { border: none; background: transparent; font-size: 13px; outline: none; width: 100%; color: var(--ink); font-family: var(--font-body); }
+  .search-bar input::placeholder { color: var(--ink-faint); }
+
+  .topbar-actions { display: flex; align-items: center; gap: 18px; }
+  .topbar-actions .date-badge { font-family: var(--mono); font-size: 11.5px; font-weight: 500; color: var(--ink-soft); background: var(--card-bg-alt); border: 1px solid var(--line); padding: 6px 12px; border-radius: var(--radius-full); }
+  .topbar-actions .icon-btn { color: var(--ink-soft); font-size: 20px; cursor: pointer; transition: var(--transition); border: none; background: none; display: flex; align-items: center; justify-content: center; }
+  .topbar-actions .icon-btn:hover { color: var(--accent); }
+  .avatar { width: 34px; height: 34px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #FFF; font-weight: 700; font-size: 13px; font-family: var(--font-display); }
+
+  main.content { padding: 28px 36px 80px; display: flex; flex-direction: column; gap: 28px; }
+
+  /* ---------- Typography ---------- */
+  .display-title { font-family: var(--font-display); font-size: 32px; font-weight: 700; color: var(--ink); margin: 0 0 6px 0; }
+  .section-title { font-family: var(--font-display); font-size: 19px; font-weight: 600; color: var(--ink); margin: 0 0 18px 0; display: flex; align-items: center; gap: 10px; }
+  .section-title .eyebrow { font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--ink-faint); letter-spacing: 0.1em; text-transform: uppercase; background: var(--bg-soft); border: 1px solid var(--line); padding: 3px 8px; border-radius: 5px; }
+
+  /* ---------- Panels & Cards ---------- */
+  .panel { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 28px; box-shadow: var(--shadow-sm); transition: var(--transition); }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 8px; }
+  .kpi-premium-card { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 20px; box-shadow: var(--shadow-sm); transition: var(--transition); position: relative; }
+  .kpi-premium-card:hover { border-color: var(--ink-faint); transform: translateY(-2px); }
+  .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .kpi-title { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 7px; }
+  .kpi-title i { font-size: 16px; color: var(--accent); }
+  .kpi-value { font-family: var(--mono); font-size: 32px; font-weight: 700; color: var(--ink); line-height: 1; margin-bottom: 10px; letter-spacing: -0.01em; }
+  .kpi-meta { font-size: 12.5px; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; font-family: var(--mono); }
   
-  .search-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: #F1F5F9;
-    padding: 8px 16px;
-    border-radius: var(--radius-full);
-    width: 320px;
-  }
-  .search-bar i { color: var(--ink-soft); font-size: 18px; }
-  .search-bar input {
-    border: none;
-    background: transparent;
-    font-size: 14px;
-    outline: none;
-    width: 100%;
-    color: var(--ink);
-  }
-
-  .topbar-actions {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-  }
-  .topbar-actions .date-badge {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--ink-soft);
-    background: #F1F5F9;
-    padding: 6px 12px;
-    border-radius: var(--radius-full);
-  }
-  .topbar-actions .icon-btn {
-    color: var(--ink-soft);
-    font-size: 22px;
-    cursor: pointer;
-    transition: var(--transition);
-  }
-  .topbar-actions .icon-btn:hover { color: var(--ink); }
-  .avatar {
-    width: 36px;
-    height: 36px;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-weight: 600;
-    font-size: 14px;
-    box-shadow: var(--shadow-sm);
-  }
-
-  main.content {
-    padding: 32px 40px 80px;
-    display: flex;
-    flex-direction: column;
-    gap: 32px;
-  }
-
-  /* Typography */
-  .display-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 42px;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    color: var(--ink);
-    margin: 0 0 8px 0;
-  }
-  .section-title {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 26px;
-    font-weight: 600;
-    color: var(--ink);
-    margin: 0 0 24px 0;
-  }
-
-  /* Panels / Cards */
-  .panel {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    box-shadow: var(--shadow-md);
-    transition: var(--transition);
-  }
-  .panel:hover { box-shadow: var(--shadow-lg); }
-
-  /* Premium KPI Cards */
-  .kpi-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 24px;
-    margin-bottom: 32px;
-  }
-  .kpi-premium-card {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 24px;
-    box-shadow: var(--shadow-sm);
-    transition: var(--transition);
-    position: relative;
-    overflow: hidden;
-  }
-  .kpi-premium-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-  }
-  .kpi-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 16px;
-  }
-  .kpi-title {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--ink-soft);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .kpi-title i { font-size: 20px; color: var(--primary); }
-  .kpi-value {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 44px;
-    font-weight: 700;
-    color: var(--ink);
-    line-height: 1;
-    margin-bottom: 12px;
-  }
-  .kpi-meta {
-    font-size: 13px;
-    color: var(--ink-soft);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .badge {
-    padding: 4px 8px;
-    border-radius: var(--radius-full);
-    font-weight: 600;
-    font-size: 12px;
-  }
+  .badge { padding: 3px 8px; border-radius: var(--radius-full); font-weight: 700; font-size: 11.5px; font-family: var(--mono); }
   .badge.text-success { background: var(--success-soft); color: var(--success); }
   .badge.text-danger { background: var(--danger-soft); color: var(--danger); }
 
-  /* AI Insights Layout */
-  .ai-insights-panel {
-    background: linear-gradient(145deg, #F8FAFC, #FFFFFF);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    box-shadow: var(--shadow-md);
-    position: relative;
-    overflow: hidden;
-  }
-  .ai-insights-panel::before {
-    content: '';
-    position: absolute;
-    top: 0; right: 0; width: 300px; height: 300px;
-    background: radial-gradient(circle, rgba(124, 58, 237, 0.1) 0%, transparent 70%);
-    transform: translate(30%, -30%);
-  }
-  .ai-insights-header {
-    font-family: 'Space Grotesk', sans-serif;
-    font-size: 20px;
-    font-weight: 600;
-    margin-bottom: 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+  /* ---------- AI insights panel ---------- */
+  .ai-insights-panel { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 26px 28px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+  .ai-insights-panel::before { content: ''; position: absolute; top: 0; right: 0; width: 260px; height: 260px; background: radial-gradient(circle, var(--purple-soft) 0%, transparent 70%); transform: translate(30%, -30%); pointer-events: none; }
+  .ai-insights-header { font-family: var(--font-display); font-size: 16px; font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
   .text-purple { color: var(--purple); }
-  
-  .chat-box {
-    display: flex;
-    gap: 12px;
-    background: #FFFFFF;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 8px;
-    box-shadow: var(--shadow-sm);
-    margin-top: 24px;
-    transition: var(--transition);
-  }
-  .chat-box:focus-within {
-    border-color: var(--purple);
-    box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
-  }
-  .chat-box input {
-    flex: 1;
-    border: none;
-    outline: none;
-    font-size: 15px;
-    padding: 12px 16px;
-    background: transparent;
-  }
 
-  /* Toolbar / Filters */
-  .enterprise-filters {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 16px 24px;
-    box-shadow: var(--shadow-sm);
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin-bottom: 32px;
-  }
-  .filter-row-container {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-  .filter-row-container::-webkit-scrollbar { height: 4px; }
-  .filter-row-container::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
-  
-  .filter-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ink-soft);
-    font-weight: 600;
-    white-space: nowrap;
-    min-width: 100px;
-  }
-  
-  .widget-tab, .week-btn {
-    padding: 8px 16px;
-    border-radius: var(--radius-full);
-    border: 1px solid var(--line);
-    background: #FFFFFF;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: var(--transition);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .widget-tab:hover, .week-btn:hover { border-color: var(--primary); color: var(--primary); }
-  .widget-tab.active, .week-btn.active {
-    background: var(--ink);
-    color: white;
-    border-color: var(--ink);
-    box-shadow: var(--shadow-sm);
-  }
-  .widget-tab.active .s { color: #94A3B8; }
-  .widget-tab .s { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
+  .chat-box { display: flex; gap: 8px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 6px; margin-top: 18px; transition: var(--transition); }
+  .chat-box:focus-within { border-color: var(--purple); box-shadow: 0 0 0 3px var(--purple-soft); }
+  .chat-box input { flex: 1; border: none; outline: none; font-size: 14px; padding: 10px 14px; background: transparent; color: var(--ink); font-family: var(--font-body); }
+  .chat-box input::placeholder { color: var(--ink-faint); }
 
-  /* Waterfall Bridge */
-  .waterfall-bridge {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    padding: 32px;
-    box-shadow: var(--shadow-sm);
-    margin-bottom: 32px;
-    overflow-x: auto;
-  }
-  .wf-step {
-    flex: 1;
-    min-width: 160px;
-  }
-  .wf-card {
-    background: #F8FAFC;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 20px;
-    text-align: center;
-    transition: var(--transition);
-  }
-  .wf-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
-  .wf-card.wf-new { border-bottom: 4px solid var(--success); }
-  .wf-card.wf-lost { border-bottom: 4px solid var(--danger); }
-  .wf-card.wf-current {
-    background: var(--primary-soft);
-    border: 1px solid rgba(37, 99, 235, 0.2);
-    border-bottom: 4px solid var(--primary);
-  }
-  .wf-label { display: block; font-size: 13px; color: var(--ink-soft); font-weight: 500; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .wf-val { display: block; font-family: var(--mono); font-size: 24px; font-weight: 600; color: var(--ink); }
-  .wf-arrow { font-size: 24px; color: #CBD5E1; }
-  .text-success { color: var(--success); }
-  .text-danger { color: var(--danger); }
-  .text-primary { color: var(--primary); }
+  /* ---------- Filters ---------- */
+  .enterprise-filters { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px 20px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 12px; }
+  .filter-row-container { display: flex; align-items: center; gap: 10px; overflow-x: auto; padding-bottom: 2px; }
+  .filter-row-container::-webkit-scrollbar { height: 3px; }
+  .filter-row-container::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
-  /* Regional Heads Grid */
-  .rh-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
+  .filter-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--ink-faint); font-weight: 700; white-space: nowrap; min-width: 90px; font-family: var(--mono); }
+
+  .widget-tab, .week-btn { padding: 7px 14px; border-radius: var(--radius-full); border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink-soft); font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: var(--transition); display: flex; flex-direction: column; align-items: center; }
+  .widget-tab:hover, .week-btn:hover { border-color: var(--accent-line); color: var(--ink); }
+  .widget-tab.active, .week-btn.active { background: var(--accent); color: #FFF; border-color: var(--accent); font-weight: 700; }
+  .widget-tab.active .s { color: rgba(255,255,255,0.75); }
+  .widget-tab .s { font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; font-family: var(--mono); }
+  .week-btn { font-family: var(--mono); }
+
+  /* ---------- Live Sync Banner (Simplified) ---------- */
+  #rbLiveBar {
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    padding: 14px 20px; border-radius: var(--radius-md); font-family: var(--font-body);
+    font-size: 13.5px; font-weight: 500; color: var(--accent);
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
   }
-  .rh-premium-card {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-md);
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    transition: var(--transition);
-  }
-  .rh-premium-card:hover {
-    box-shadow: var(--shadow-md);
-    border-color: #CBD5E1;
-  }
-  .rh-top {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .rh-avatar {
-    width: 40px; height: 40px;
-    background: #F1F5F9;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--ink-soft);
-    font-size: 20px;
-  }
+  #rbLiveStatus { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  #rbLiveBar a { text-decoration: none; padding: 6px 12px; border-radius: var(--radius-sm); font-weight: 600; color: var(--accent); border: 1px solid var(--accent-line); background: var(--card-bg); transition: var(--transition); }
+  #rbLiveBar a:hover { background: var(--accent-soft); }
+
+  /* ---------- Metric tabs ---------- */
+  .metric-tabs { display: flex; gap: 4px; background: var(--bg-soft); border: 1px solid var(--line); padding: 4px; border-radius: var(--radius-md); width: max-content; }
+  .metric-tab { padding: 8px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: var(--transition); color: var(--ink-soft); }
+  .metric-tab.active { background: var(--card-bg); color: var(--ink); box-shadow: var(--shadow-sm); border: 1px solid var(--line); }
+
+  /* ---------- Bridge / ledger ---------- */
+  .waterfall-bridge { display: flex; align-items: stretch; justify-content: space-between; gap: 0; background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 8px; overflow-x: auto; }
+  .wf-step { flex: 1; min-width: 150px; display: flex; align-items: center; }
+  .wf-card { flex: 1; background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: var(--radius-md); padding: 18px 16px; text-align: center; transition: var(--transition); }
+  .wf-card:hover { border-color: var(--ink-faint); }
+  .wf-card.wf-new { border-bottom: 2px solid var(--success); }
+  .wf-card.wf-lost { border-bottom: 2px solid var(--danger); }
+  .wf-card.wf-current { background: var(--accent-soft); border: 1px solid var(--accent-line); border-bottom: 2px solid var(--accent); }
+  .wf-label { display: block; font-size: 10.5px; color: var(--ink-faint); font-weight: 700; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.07em; font-family: var(--mono); }
+  .wf-val { display: block; font-family: var(--mono); font-size: 21px; font-weight: 700; color: var(--ink); }
+  .wf-arrow { font-size: 18px; color: var(--ink-faint); padding: 0 6px; flex-shrink: 0; }
+  
+  /* ---------- Regional Head ledger rows ---------- */
+  .rh-grid { display: flex; flex-direction: column; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+  .rh-premium-card { background: var(--card-bg); padding: 14px 18px; display: flex; align-items: center; gap: 16px; transition: var(--transition); }
+  .rh-premium-card:hover { background: var(--card-bg-alt); }
+  .rh-top { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+  .rh-avatar { width: 32px; height: 32px; background: var(--bg-soft); border: 1px solid var(--line); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-size: 15px; flex-shrink: 0; }
   .rh-info { flex: 1; overflow: hidden; }
-  .rh-name { font-weight: 600; font-size: 15px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .rh-stats { font-size: 13px; color: var(--ink-soft); font-family: var(--mono); margin-top: 4px;}
-  .rh-val { font-family: var(--mono); font-weight: 700; font-size: 16px; text-align: right; }
-  .rh-progress {
-    height: 6px;
-    background: #F1F5F9;
-    border-radius: var(--radius-full);
-    overflow: hidden;
-  }
-  .rh-progress-bar {
-    height: 100%;
-    background: linear-gradient(90deg, var(--secondary), var(--primary));
-    border-radius: var(--radius-full);
-    transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
-  }
+  .rh-name { font-weight: 600; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rh-stats { font-size: 11.5px; color: var(--ink-faint); font-family: var(--mono); margin-top: 2px; }
+  .rh-val { font-family: var(--mono); font-weight: 700; font-size: 14.5px; text-align: right; min-width: 110px; color: var(--ink); }
+  .rh-progress { flex: 1; max-width: 160px; height: 5px; background: var(--bg-soft); border-radius: var(--radius-full); overflow: hidden; }
+  .rh-progress-bar { height: 100%; background: linear-gradient(90deg, var(--teal), var(--accent)); border-radius: var(--radius-full); transition: width 0.8s cubic-bezier(0.16,1,0.3,1); }
 
-  /* Enterprise Table */
-  .table-wrapper {
-    background: var(--card-bg);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-  }
-  .table-header-toolbar {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--line);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #F8FAFC;
-  }
-  .table-scroll {
-    overflow-x: auto;
-    max-height: 500px;
-  }
-  table.enterprise-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    font-family: 'Inter', sans-serif;
-  }
-  .enterprise-table th {
-    position: sticky;
-    top: 0;
-    background: #F8FAFC;
-    color: var(--ink-soft);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 12px;
-    padding: 16px 24px;
-    text-align: left;
-    border-bottom: 1px solid var(--line);
-    z-index: 10;
-  }
-  .enterprise-table td {
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--line);
-    color: var(--ink);
-    font-family: var(--mono);
-    font-size: 13px;
-  }
-  .enterprise-table tbody tr {
-    transition: var(--transition);
-  }
-  .enterprise-table tbody tr:hover {
-    background: #F1F5F9;
-  }
-  .status-badge {
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: 'Inter', sans-serif;
-  }
+  /* ---------- Table ---------- */
+  .table-wrapper { background: var(--card-bg); border: 1px solid var(--line); border-radius: var(--radius-lg); overflow: hidden; }
+  .table-header-toolbar { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; background: var(--bg-soft); }
+  .table-scroll { overflow-x: auto; max-height: 480px; }
+  table.enterprise-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .enterprise-table th { position: sticky; top: 0; background: var(--bg-soft); color: var(--ink-faint); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; font-size: 10.5px; padding: 12px 20px; text-align: left; border-bottom: 1px solid var(--line); z-index: 10; font-family: var(--mono); }
+  .enterprise-table td { padding: 11px 20px; border-bottom: 1px solid var(--line-soft); color: var(--ink); font-family: var(--mono); font-size: 12.5px; }
+  .enterprise-table tbody tr { transition: var(--transition); }
+  .enterprise-table tbody tr:hover { background: var(--card-bg-alt); }
+  .status-badge { padding: 3px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 700; font-family: var(--mono); }
   .status-active { background: var(--success-soft); color: var(--success); }
   .status-churn { background: var(--danger-soft); color: var(--danger); }
 
-  /* Form & Buttons */
-  button {
-    font-family: 'Inter', sans-serif;
-    transition: var(--transition);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-  }
-  button.primary {
-    background: var(--ink);
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    font-size: 14px;
-    box-shadow: var(--shadow-sm);
-  }
-  button.primary:hover { 
-    background: #334155;
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-md);
-  }
-  button.ghost {
-    background: transparent;
-    color: var(--ink);
-    border: 1px solid var(--line);
-    padding: 10px 18px;
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    font-size: 13px;
-  }
-  button.ghost:hover { background: #F1F5F9; }
+  /* ---------- Buttons / inputs ---------- */
+  button { font-family: var(--font-body); transition: var(--transition); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+  button.primary { background: var(--accent); color: #FFF; border: none; padding: 11px 22px; border-radius: var(--radius-sm); font-weight: 700; font-size: 13.5px; box-shadow: var(--shadow-sm); }
+  button.primary:hover { opacity: 0.9; transform: translateY(-1px); }
+  button.primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); padding: 9px 16px; border-radius: var(--radius-sm); font-weight: 600; font-size: 12.5px; }
+  button.ghost:hover { background: var(--card-bg-alt); border-color: var(--ink-faint); }
 
-  /* Settings row mappings */
-  .settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-  input[type=password], input[type=text], select {
-    padding: 12px 16px;
-    border-radius: var(--radius-sm);
-    border: 1px solid #CBD5E1;
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    background: #FFFFFF;
-    color: var(--ink);
-    transition: var(--transition);
-  }
-  input:focus, select:focus {
-    outline: none;
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px var(--primary-soft);
-  }
-  .upload-zone {
-    border: 2px dashed #CBD5E1;
-    border-radius: var(--radius-md);
-    padding: 40px 28px;
-    text-align: center;
-    cursor: pointer;
-    background: #F8FAFC;
-    transition: var(--transition);
-    font-weight: 500;
-    color: var(--ink-soft);
-  }
-  .upload-zone:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+  .settings-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=password], input[type=text], select { padding: 11px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); font-family: var(--font-body); font-size: 13.5px; background: var(--bg-soft); color: var(--ink); transition: var(--transition); }
+  input::placeholder { color: var(--ink-faint); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  select option { background: var(--card-bg); color: var(--ink); }
+
+  .key-status { font-family: var(--mono); font-size: 12.5px; }
+  .key-status.missing { color: var(--ink-faint); }
+
+  .upload-zone { border: 1.5px dashed var(--line); border-radius: var(--radius-md); padding: 32px 24px; text-align: center; cursor: pointer; background: var(--bg-soft); transition: var(--transition); font-weight: 500; color: var(--ink-soft); font-size: 13.5px; }
+  .upload-zone:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
   .upload-zone input { display: none; }
-  
-  .trend-wrap { max-width: 100%; height: 280px; margin-top: 20px; }
-  
-  /* Generic Dashboard classes */
-  .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px; }
-  
-  /* Loading states */
-  .rb-loading { color: var(--primary); font-weight: 500; font-size: 15px; text-align: center; padding: 60px 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
-  .rb-loading::after { content: ""; width: 24px; height: 24px; border: 3px solid var(--primary-soft); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+
+  .trend-wrap { max-width: 100%; height: 260px; margin-top: 4px; }
+  .overview-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+
+  .rb-loading { color: var(--ink-soft); font-weight: 500; font-size: 13.5px; text-align: center; padding: 56px 0; display: flex; flex-direction: column; align-items: center; gap: 14px; font-family: var(--mono); }
+  .rb-loading::after { content: ""; width: 20px; height: 20px; border: 2.5px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  
-  .error { color: var(--danger); font-size: 14px; background: var(--danger-soft); padding: 12px; border-radius: var(--radius-sm); border: 1px solid #FECACA; display: inline-block; }
-  
-  /* Live Bar mapping */
-  #rbLiveBar {
-    padding: 12px 24px;
-    background: var(--success-soft);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    border-radius: var(--radius-md);
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--success);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 32px;
-  }
-  #rbLiveBar a { text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: var(--transition); font-weight: 600; color: var(--success); }
-  #rbLiveBar a:hover { background: rgba(34, 197, 94, 0.15); }
-  
-  /* Metric Tabs -> Hidden because we use AI prompt logic mostly, but styling for JS preservation */
-  .metric-tabs { display: flex; gap: 8px; margin-bottom: 24px; background: #F1F5F9; padding: 6px; border-radius: var(--radius-md); width: max-content; }
-  .metric-tab { padding: 10px 24px; border-radius: var(--radius-sm); font-weight: 600; font-size: 14px; cursor: pointer; transition: var(--transition); color: var(--ink-soft); }
-  .metric-tab.active { background: #FFFFFF; color: var(--ink); box-shadow: var(--shadow-sm); }
+
+  .error { color: var(--danger); font-size: 13.5px; background: var(--danger-soft); padding: 11px 14px; border-radius: var(--radius-sm); border: 1px solid rgba(220, 38, 38, 0.3); display: inline-block; font-family: var(--mono); }
+
+  .text-success { color: var(--success); }
+  .text-danger { color: var(--danger); }
+  .text-primary { color: var(--accent); }
 </style>
 </head>
 <body>
 
 <div class="app-container">
-  
+
   <aside class="sidebar">
     <div class="brand">
-      <i class="ph ph-chart-polar"></i>
-      <span>DotDash</span>
+      <span class="brand-dot"></span>
+      <div>
+        <span>DotDash</span>
+        <small>MERCHANT TERMINAL</small>
+      </div>
     </div>
     <nav class="nav-links">
       <a href="#" class="active"><i class="ph ph-squares-four"></i> Dashboard</a>
@@ -666,59 +303,63 @@
       <a href="#"><i class="ph ph-file-text"></i> Reports</a>
       <a href="#"><i class="ph ph-gear"></i> Settings</a>
     </nav>
+    <div class="sidebar-foot">v1.1 · SQLite session store<br>local time zone</div>
   </aside>
 
   <div class="main-wrapper">
-    
+
     <nav class="top-navbar">
       <div class="search-bar">
         <i class="ph ph-magnifying-glass"></i>
-        <input type="text" placeholder="Search merchants, metrics...">
+        <input type="text" placeholder="Search merchants, teams, regions…">
       </div>
       <div class="topbar-actions">
         <div class="date-badge" id="currentDateBadge">Today</div>
-        <i class="ph ph-bell icon-btn"></i>
+        <!-- Theme Toggle Button -->
+        <button class="icon-btn" id="themeToggle" title="Toggle Theme"><i class="ph ph-moon"></i></button>
+        <button class="icon-btn" title="Notifications"><i class="ph ph-bell"></i></button>
         <div class="avatar">BJ</div>
       </div>
     </nav>
 
     <main class="content">
-      
-      <section class="panel" style="margin-bottom: 32px;">
-        <h3 class="section-title" style="margin-top:0;">Workspace Settings</h3>
+
+      <section class="panel">
+        <h3 class="section-title" style="margin-top:0;"><span class="eyebrow">Config</span> Workspace</h3>
         <div class="settings-row">
           <select id="rbProviderSelect">
             <option value="anthropic">Claude (Anthropic)</option>
             <option value="gemini">Gemini (Google)</option>
             <option value="openai">GPT (OpenAI)</option>
           </select>
-          <input type="password" id="rbApiKeyInput" placeholder="Paste your API key" style="flex:1; min-width: 250px;" />
+          <input type="password" id="rbApiKeyInput" placeholder="Paste your API key" style="flex:1; min-width: 240px;" />
           <input type="text" class="model-input" id="rbModelInput" placeholder="model (optional)" />
-          <span class="key-status missing" id="rbKeyStatus" style="font-size: 13px; font-weight: 500;">no key saved</span>
+          <span class="key-status missing" id="rbKeyStatus">no key saved</span>
         </div>
       </section>
 
-      <section class="panel" id="rbUploadPanel" style="margin-bottom: 32px;">
-        <h3 class="section-title" style="margin-top:0;">Data Source</h3>
-        <div class="settings-row" style="margin-bottom:24px;">
+      <section class="panel" id="rbUploadPanel">
+        <h3 class="section-title" style="margin-top:0;"><span class="eyebrow">Source</span> Data</h3>
+        <div class="settings-row" style="margin-bottom:20px;">
           <input type="text" id="rbSheetUrlInput" placeholder="Paste a Google Sheets link…" style="flex:1;" />
           <button class="primary" id="rbSheetLoadBtn">Connect Shared Sheet</button>
         </div>
         <div class="upload-zone" id="rbDropZone">
-          <i class="ph ph-upload-simple" style="font-size: 32px; margin-bottom: 12px; color: var(--primary);"></i>
+          <i class="ph ph-upload-simple" style="font-size: 26px; margin-bottom: 10px; color: var(--accent); display:block;"></i>
           <div id="rbDropLabel">Or drop a local .xlsx or .csv file here for a private session</div>
           <input type="file" id="rbFileInput" accept=".xlsx,.xls,.csv" />
         </div>
-        <div id="rbFileMeta" style="margin-top: 12px; font-size: 13px; color: var(--ink-soft); text-align: center;"></div>
+        <div id="rbFileMeta" style="margin-top: 12px; font-size: 12.5px; color: var(--ink-soft); text-align: center; font-family: var(--mono);"></div>
       </section>
 
       <section id="rbDashboard" style="display:none;">
-        
-        <h1 class="display-title">Good Morning.</h1>
-        <p style="color: var(--ink-soft); margin-bottom: 32px; font-size: 15px;">Here is your AI-powered performance summary for today.</p>
 
+        <h1 class="display-title">Dashboard.</h1>
+        <p style="color: var(--ink-soft); margin-bottom: 24px; font-size: 14px;">AI-assisted performance summary, synced from your source.</p>
+
+        <!-- Refined Banner replacing the thermal ticker -->
         <div id="rbLiveBar" style="display:none;">
-          <span id="rbLiveStatus"><i class="ph ph-broadcast"></i> Live from Google Sheet</span>
+          <span id="rbLiveStatus"><i class="ph ph-check-circle"></i> SYNCED WITH GOOGLE SHEET</span>
           <span>
             <a href="#" id="rbChangeSource">Change Source</a>
             <a href="#" id="rbRefreshNow"><i class="ph ph-arrows-clockwise"></i> Refresh Now</a>
@@ -726,17 +367,17 @@
         </div>
 
         <div id="rbTypeRevenue">
-          
-          <div class="ai-insights-panel" style="margin-bottom: 32px;">
+
+          <div class="ai-insights-panel" style="margin-bottom: 24px;">
             <div class="ai-insights-header"><i class="ph ph-sparkle text-purple"></i> DotDash AI Assistant</div>
-            <p style="color: var(--ink-soft); font-size: 15px; margin: 0;">Ask me to analyze teams, regions, or specific metrics.</p>
+            <p style="color: var(--ink-soft); font-size: 13.5px; margin: 0;">Ask about a team, region, or metric in plain language.</p>
             <div class="chat-box">
               <input type="text" id="rbPromptInput" placeholder="e.g. show me Farming team from W0 to W2, or merchant count for Rista" />
-              <button class="primary" id="rbAskBtn" style="border-radius: 8px;"><i class="ph ph-paper-plane-right"></i> Generate</button>
+              <button class="primary" id="rbAskBtn"><i class="ph ph-paper-plane-right"></i> Generate</button>
             </div>
           </div>
 
-          <div class="enterprise-filters">
+          <div class="enterprise-filters" style="margin-bottom: 24px;">
              <div class="filter-row-container">
                <div class="filter-label">Metric</div>
                <div id="rbMetricTabs" class="metric-tabs" style="margin: 0;">
@@ -745,42 +386,42 @@
                  <div class="metric-tab" data-metric="stores">Stores</div>
                </div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Week</div>
                <div id="rbWeekBtns" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Month</div>
                <div id="rbMonthTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Quarter</div>
                <div id="rbQuarterTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Team</div>
                <div id="rbTeamTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Segment</div>
                <div id="rbSegmentTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Regional Head</div>
                <div id="rbRhTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container" id="rbProductGroup" style="display:none;">
                <div class="filter-label">Product</div>
                <div id="rbProductTabs" class="filter-row-container" style="padding:0;"></div>
              </div>
-             
+
              <div class="filter-row-container">
                <div class="filter-label">Location</div>
                <select id="rbCitySelect"><option value="All">All Cities</option></select>
@@ -789,21 +430,21 @@
           </div>
 
           <div id="rbBody">
-            <div class="rb-loading">Analyzing Enterprise Data…</div>
+            <div class="rb-loading">Analyzing enterprise data…</div>
           </div>
         </div>
 
         <div id="rbTypeGeneric" style="display:none;" class="panel">
-          <div id="rbGenericMeta" style="margin-bottom:24px; font-size:14px; color: var(--ink-soft);"></div>
+          <div id="rbGenericMeta" style="margin-bottom:20px; font-size:13px; color: var(--ink-soft); font-family: var(--mono);"></div>
           <div id="rbGenericOverview" class="overview-grid"></div>
-          
-          <div class="ai-insights-panel" style="margin-top:32px;">
+
+          <div class="ai-insights-panel" style="margin-top:28px;">
             <div class="ai-insights-header"><i class="ph ph-sparkle text-purple"></i> Ask Data</div>
             <div class="chat-box">
               <input type="text" id="rbGenericPromptInput" placeholder="Ask a question about this data…" />
               <button class="primary" id="rbGenericAskBtn"><i class="ph ph-paper-plane-right"></i> Generate</button>
             </div>
-            <div id="rbGenericLog" style="margin-top:24px;"></div>
+            <div id="rbGenericLog" style="margin-top:20px;"></div>
           </div>
         </div>
 
@@ -813,6 +454,35 @@
 </div>
 
 <script>
+// ==========================================
+// THEME TOGGLE LOGIC
+// ==========================================
+const themeBtn = document.getElementById('themeToggle');
+const savedTheme = localStorage.getItem('dotdash_theme') || 'light';
+document.documentElement.setAttribute('data-theme', savedTheme);
+themeBtn.innerHTML = savedTheme === 'light' ? '<i class="ph ph-moon"></i>' : '<i class="ph ph-sun"></i>';
+
+themeBtn.addEventListener('click', () => {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', newTheme);
+    localStorage.setItem('dotdash_theme', newTheme);
+    themeBtn.innerHTML = newTheme === 'light' ? '<i class="ph ph-moon"></i>' : '<i class="ph ph-sun"></i>';
+    
+    // Quick re-render of charts to inherit new CSS variables
+    if (rbTrendChart) loadTrend();
+    
+    // Quick re-render of generic charts
+    document.querySelectorAll('.overview-grid canvas').forEach(canvas => {
+      // In a full framework this would be reactive, here we just force a page refresh 
+      // or we accept that generic charts update on the next query.
+    });
+});
+
+// ==========================================
+// MAIN APP LOGIC
+// ==========================================
+
 // Set date visually
 document.getElementById('currentDateBadge').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 
@@ -931,10 +601,10 @@ function renderGenericOverview(widgets) {
     const card = document.createElement('div');
     card.className = 'panel';
     const statHtml = w.stat ? `
-      <div style="display:flex; gap:12px; margin-top:16px; font-family:var(--mono); font-size:12px; color:var(--ink-soft); background:#F8FAFC; padding:10px; border-radius:8px;">
+      <div style="display:flex; gap:12px; margin-top:16px; font-family:var(--mono); font-size:11.5px; color:var(--ink-soft); background:var(--bg-soft); border: 1px solid var(--line); padding:10px; border-radius:8px;">
         <span>Mean: ${w.stat.mean}</span><span>Max: ${w.stat.max}</span>
       </div>` : '';
-    card.innerHTML = `<h4 style="margin:0 0 16px; font-family:var(--font-heading);">${escapeHtml(w.title)}</h4><canvas id="ov-chart-${i}"></canvas>${statHtml}`;
+    card.innerHTML = `<h4 style="margin:0 0 16px; font-family: var(--font-display); font-size: 14px; color: var(--ink);">${escapeHtml(w.title)}</h4><canvas id="ov-chart-${i}"></canvas>${statHtml}`;
     grid.appendChild(card);
     const canvas = card.querySelector('canvas');
     buildGenericChart(canvas, w.chart_type, w.data, w.chart_x, w.chart_y);
@@ -943,10 +613,10 @@ function renderGenericOverview(widgets) {
 
 function updateLiveStatusText() {
   const el = document.getElementById('rbLiveStatus');
-  if (!rb.lastRefreshed) { el.innerHTML = '<i class="ph ph-broadcast"></i> Live from Google Sheet'; return; }
+  if (!rb.lastRefreshed) { el.innerHTML = '<i class="ph ph-check-circle"></i> SYNCED WITH GOOGLE SHEET'; return; }
   const secs = Math.max(0, Math.round(Date.now() / 1000 - rb.lastRefreshed));
   const when = secs < 60 ? `${secs}s ago` : `${Math.round(secs / 60)}m ago`;
-  el.innerHTML = `<i class="ph ph-broadcast"></i> Live from Google Sheet · updated ${when}`;
+  el.innerHTML = `<i class="ph ph-check-circle"></i> SYNCED ${when.toUpperCase()}`;
 }
 setInterval(updateLiveStatusText, 5000);
 
@@ -1024,7 +694,7 @@ document.getElementById('rbRefreshNow').addEventListener('click', async (e) => {
   try {
     await fetch('/api/rb/shared/refresh', { method: 'POST' });
   } finally {
-    label.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Refresh Now';
+    label.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Refresh';
   }
 });
 
@@ -1039,11 +709,11 @@ document.getElementById('rbChangeSource').addEventListener('click', (e) => {
 const rbDropZone = document.getElementById('rbDropZone');
 const rbFileInput = document.getElementById('rbFileInput');
 rbDropZone.addEventListener('click', () => rbFileInput.click());
-rbDropZone.addEventListener('dragover', e => { e.preventDefault(); rbDropZone.style.borderColor = 'var(--primary)'; });
-rbDropZone.addEventListener('dragleave', () => { rbDropZone.style.borderColor = '#CBD5E1'; });
+rbDropZone.addEventListener('dragover', e => { e.preventDefault(); rbDropZone.style.borderColor = 'var(--accent)'; });
+rbDropZone.addEventListener('dragleave', () => { rbDropZone.style.borderColor = 'var(--line)'; });
 rbDropZone.addEventListener('drop', e => {
   e.preventDefault();
-  rbDropZone.style.borderColor = '#CBD5E1';
+  rbDropZone.style.borderColor = 'var(--line)';
   if (e.dataTransfer.files.length) handleRbFile(e.dataTransfer.files[0]);
 });
 rbFileInput.addEventListener('change', () => {
@@ -1226,7 +896,7 @@ function currentFilterPayload() {
 
 async function rbQuery() {
   const bodyEl = document.getElementById('rbBody');
-  bodyEl.innerHTML = '<div class="rb-loading">Computing Enterprise Metrics…</div>';
+  bodyEl.innerHTML = '<div class="rb-loading">Computing enterprise metrics…</div>';
   try {
     const res = await fetch('/api/rb/query', {
       method: 'POST',
@@ -1260,6 +930,16 @@ function renderTrendChart(points, metric) {
   if (!canvas || !points || !points.length) return;
   const labels = points.map(p => 'W' + p.week);
   const values = points.map(p => p.value);
+  
+  // Read colors dynamically from CSS variables for Light/Dark mode
+  const style = getComputedStyle(document.documentElement);
+  const accent = style.getPropertyValue('--accent').trim();
+  const cardBg = style.getPropertyValue('--card-bg').trim();
+  const gridLine = style.getPropertyValue('--line').trim();
+  const inkFaint = style.getPropertyValue('--ink-faint').trim();
+  const bodyFont = style.getPropertyValue('--font-body').trim().replace(/['"]/g, '');
+  const monoFont = style.getPropertyValue('--mono').trim().replace(/['"]/g, '');
+
   if (rbTrendChart) rbTrendChart.destroy();
   rbTrendChart = new Chart(canvas, {
     type: 'line',
@@ -1268,38 +948,42 @@ function renderTrendChart(points, metric) {
       datasets: [{
         label: { revenue: 'Revenue', merchants: 'Merchants', stores: 'Stores' }[metric] || metric,
         data: values,
-        borderColor: '#2563EB',
+        borderColor: accent,
         backgroundColor: (context) => {
           const ctx = context.chart.ctx;
-          const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-          gradient.addColorStop(0, 'rgba(37, 99, 235, 0.2)');
-          gradient.addColorStop(1, 'rgba(37, 99, 235, 0)');
+          const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+          gradient.addColorStop(0, accent.replace(')', ', 0.22)').replace('rgb', 'rgba'));
+          gradient.addColorStop(1, accent.replace(')', ', 0)').replace('rgb', 'rgba'));
           return gradient;
         },
         fill: true,
         tension: 0.4,
-        pointRadius: 4,
-        pointBackgroundColor: '#FFFFFF',
-        pointBorderColor: '#2563EB',
+        pointRadius: 3,
+        pointBackgroundColor: cardBg,
+        pointBorderColor: accent,
         pointBorderWidth: 2,
-        borderWidth: 3
+        borderWidth: 2.5
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { 
+      plugins: {
         legend: { display: false },
         tooltip: {
-          backgroundColor: '#0F172A',
+          backgroundColor: cardBg,
+          borderColor: gridLine,
+          borderWidth: 1,
           padding: 12,
-          titleFont: { family: 'Inter', size: 13 },
-          bodyFont: { family: 'JetBrains Mono', size: 14 }
+          titleColor: inkFaint,
+          bodyColor: accent,
+          titleFont: { family: bodyFont, size: 12 },
+          bodyFont: { family: monoFont, size: 13 }
         }
       },
-      scales: { 
-        y: { beginAtZero: true, grid: { color: '#E2E8F0', drawBorder: false }, border: { dash: [4,4] } }, 
-        x: { grid: { display: false }, border: { display: false } } 
+      scales: {
+        y: { beginAtZero: true, grid: { color: gridLine, drawBorder: false }, ticks: { color: inkFaint, font: { family: monoFont, size: 10.5 } } },
+        x: { grid: { display: false }, ticks: { color: inkFaint, font: { family: monoFont, size: 10.5 } }, border: { display: false } }
       }
     }
   });
@@ -1315,7 +999,7 @@ async function rbAsk() {
   if (!apiKey) { alert('Add your API key in the Workspace Settings first.'); return; }
 
   const bodyEl = document.getElementById('rbBody');
-  bodyEl.innerHTML = '<div class="rb-loading">Generating AI Analysis…</div>';
+  bodyEl.innerHTML = '<div class="rb-loading">Generating AI analysis…</div>';
 
   try {
     const res = await fetch('/api/rb/nl_query', {
@@ -1400,22 +1084,21 @@ function renderRbBody(data) {
   const fmtVal = (n) => isRevenue ? '₹' + fmtInr(n) : Math.round(n).toLocaleString();
   const metricLabel = { revenue: 'Revenue', merchants: 'Merchants', stores: 'Stores' }[metric];
 
-  // Calculate Growth
   const prev = data.previous_week_total || 0;
   const curr = data.current_week_total || 0;
   const growthPct = prev ? (((curr - prev) / prev) * 100).toFixed(1) : 0;
   const growthSign = growthPct >= 0 ? '+' : '';
   const growthClass = growthPct >= 0 ? 'text-success' : 'text-danger';
-  const sparkGood = `<svg width="50" height="15" viewBox="0 0 50 15" fill="none"><path d="M0 12L15 8L30 10L50 2" stroke="var(--success)" stroke-width="2" stroke-linecap="round"/></svg>`;
-  const sparkBad = `<svg width="50" height="15" viewBox="0 0 50 15" fill="none"><path d="M0 2L15 10L30 8L50 12" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const sparkGood = `<svg width="46" height="14" viewBox="0 0 50 15" fill="none"><path d="M0 12L15 8L30 10L50 2" stroke="var(--success)" stroke-width="2" stroke-linecap="round"/></svg>`;
+  const sparkBad = `<svg width="46" height="14" viewBox="0 0 50 15" fill="none"><path d="M0 2L15 10L30 8L50 12" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>`;
 
   const tableCols = data.table_rows.length ? Object.keys(data.table_rows[0]) : [];
   const tableHtml = data.table_rows.length ? `
     <div class="table-wrapper">
       <div class="table-header-toolbar">
-         <h4 style="margin:0; font-family: 'Space Grotesk', sans-serif;">Data View</h4>
+         <h4 style="margin:0; font-family: var(--font-display); font-size: 14px; color: var(--ink);">Data View</h4>
          <div style="display:flex; gap:12px;">
-            <div class="search-bar" style="width: 220px; background: #FFFFFF; border: 1px solid var(--line);">
+            <div class="search-bar" style="width: 200px; background: var(--card-bg); border: 1px solid var(--line);">
                <i class="ph ph-magnifying-glass"></i>
                <input type="text" placeholder="Search rows...">
             </div>
@@ -1440,13 +1123,11 @@ function renderRbBody(data) {
         </table>
       </div>
     </div>
-    ${data.table_rows.length > 50 ? `<div style="margin-top:12px; font-size:12px; color:var(--ink-soft);">Showing top 50 rows.</div>` : ''}
+    ${data.table_rows.length > 50 ? `<div style="margin-top:12px; font-size:11.5px; color:var(--ink-faint); font-family: var(--mono);">Showing top 50 rows.</div>` : ''}
   ` : '<div class="panel"><div style="color:var(--ink-soft); text-align:center; padding: 32px;">No merchants match this selection.</div></div>';
 
   bodyEl.innerHTML = `
-    
     <div class="kpi-grid">
-      
       <div class="kpi-premium-card">
         <div class="kpi-header">
           <div class="kpi-title"><i class="ph ph-trend-up"></i> Current ${metricLabel}</div>
@@ -1471,19 +1152,10 @@ function renderRbBody(data) {
         <div class="kpi-value">${data.store_count !== null ? data.store_count.toLocaleString() : '—'}</div>
         <div class="kpi-meta"><span class="badge text-success">Stable</span> operations</div>
       </div>
-
-      <div class="kpi-premium-card" style="background: linear-gradient(135deg, #1E293B, #0F172A); color: white; border: none;">
-        <div class="kpi-header">
-          <div class="kpi-title" style="color: #94A3B8;"><i class="ph ph-sparkle text-purple"></i> AI Score</div>
-        </div>
-        <div class="kpi-value" style="color: white;">94<span style="font-size:20px; color:#64748B;">/100</span></div>
-        <div class="kpi-meta" style="color: #94A3B8;"><span class="badge" style="background: rgba(124,58,237,0.2); color: #A78BFA;">Excellent</span> system health</div>
-      </div>
-
     </div>
 
-    <h3 class="section-title">Metrics Bridge</h3>
-    <div class="waterfall-bridge">
+    <h3 class="section-title" style="margin-top:24px;">Metrics Bridge</h3>
+    <div class="waterfall-bridge" style="margin-bottom: 24px;">
       <div class="wf-step">
         <div class="wf-card">
           <span class="wf-label">Previous Week</span>
@@ -1513,13 +1185,13 @@ function renderRbBody(data) {
       </div>
     </div>
 
-    <div class="panel" style="margin-bottom: 32px;">
+    <div class="panel" style="margin-bottom: 24px;">
       <h3 class="section-title" style="margin-top:0;">${metricLabel} Trend</h3>
       <div class="trend-wrap"><canvas id="rbTrendCanvas"></canvas></div>
     </div>
 
     <h3 class="section-title">Regional Head Performance</h3>
-    <div class="rh-grid" style="margin-bottom: 32px;">
+    <div class="rh-grid" style="margin-bottom: 24px;">
       ${data.rh_breakdown.map(r => `
         <div class="rh-premium-card">
           <div class="rh-top">
@@ -1528,16 +1200,16 @@ function renderRbBody(data) {
               <div class="rh-name" title="${escapeHtml(r.rh)}">${escapeHtml(r.rh)}</div>
               <div class="rh-stats">${r.merchants} Mx</div>
             </div>
-            <div class="rh-val">${fmtVal(r.current)}</div>
           </div>
           <div class="rh-progress">
             <div class="rh-progress-bar" style="width:${r.bar_pct}%"></div>
           </div>
+          <div class="rh-val">${fmtVal(r.current)}</div>
         </div>
-      `).join('') || '<div style="color:var(--ink-soft);">No data for this selection.</div>'}
+      `).join('') || '<div style="color:var(--ink-soft); padding: 16px;">No data for this selection.</div>'}
     </div>
 
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:24px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
       <h3 class="section-title" style="margin:0;">Data Breakdown</h3>
       <button class="ghost" id="rbExportBtn"><i class="ph ph-download-simple"></i> Export .xlsx</button>
     </div>
@@ -1557,8 +1229,15 @@ function buildGenericChart(canvas, chartType, rows, xKey, yKey) {
   yKey = yKey || Object.keys(rows[0])[1] || Object.keys(rows[0])[0];
   const labels = rows.map(r => r[xKey]);
   const values = rows.map(r => Number(r[yKey]) || 0);
-  
+
   const type = chartType === 'pie' ? 'pie' : (chartType === 'scatter' ? 'scatter' : (chartType === 'line' ? 'line' : 'bar'));
+  
+  const style = getComputedStyle(document.documentElement);
+  const accent = style.getPropertyValue('--accent').trim();
+  const cardBg = style.getPropertyValue('--card-bg').trim();
+  const gridLine = style.getPropertyValue('--line').trim();
+  const inkFaint = style.getPropertyValue('--ink-faint').trim();
+  const monoFont = style.getPropertyValue('--mono').trim().replace(/['"]/g, '');
 
   new Chart(canvas, {
     type: type,
@@ -1568,15 +1247,15 @@ function buildGenericChart(canvas, chartType, rows, xKey, yKey) {
         label: yKey,
         data: values,
         backgroundColor: (context) => {
-          if(type === 'pie') return ['#2563EB', '#06B6D4', '#7C3AED', '#22C55E', '#F59E0B', '#EF4444'];
+          if(type === 'pie') return [accent, '#0D9488', '#7C3AED', '#059669', '#DC2626', '#3B82F6'];
           const ctx = context.chart.ctx;
-          const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-          gradient.addColorStop(0, 'rgba(37, 99, 235, 0.8)');
-          gradient.addColorStop(1, 'rgba(37, 99, 235, 0.2)');
+          const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+          gradient.addColorStop(0, accent.replace(')', ', 0.85)').replace('rgb', 'rgba'));
+          gradient.addColorStop(1, accent.replace(')', ', 0.15)').replace('rgb', 'rgba'));
           return gradient;
         },
-        borderColor: type === 'pie' ? '#ffffff' : '#2563EB',
-        borderWidth: type === 'line' ? 3 : 1,
+        borderColor: type === 'pie' ? cardBg : accent,
+        borderWidth: type === 'line' ? 2.5 : 1,
         borderRadius: type === 'bar' ? 6 : 0,
         tension: 0.4,
         fill: type === 'line'
@@ -1584,10 +1263,10 @@ function buildGenericChart(canvas, chartType, rows, xKey, yKey) {
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: type === 'pie' } },
-      scales: type === 'pie' ? {} : { 
-        y: { beginAtZero: true, grid: { color: '#F1F5F9' }, border: { display: false } }, 
-        x: { grid: { display: false }, border: { display: false } } 
+      plugins: { legend: { display: type === 'pie', labels: { color: inkFaint, font: { family: 'Inter', size: 11 } } } },
+      scales: type === 'pie' ? {} : {
+        y: { beginAtZero: true, grid: { color: gridLine }, ticks: { color: inkFaint, font: { family: monoFont, size: 10.5 } }, border: { display: false } },
+        x: { grid: { display: false }, ticks: { color: inkFaint, font: { family: monoFont, size: 10.5 } }, border: { display: false } }
       }
     }
   });
@@ -1607,9 +1286,9 @@ async function genericAsk() {
   const log = document.getElementById('rbGenericLog');
   const exDiv = document.createElement('div');
   exDiv.style.borderTop = '1px solid var(--line)';
-  exDiv.style.paddingTop = '24px';
-  exDiv.style.marginTop = '24px';
-  exDiv.innerHTML = `<div style="font-family:var(--mono); font-weight:600; color:var(--primary); margin-bottom:12px;"><i class="ph ph-user"></i> ${escapeHtml(question)}</div><div class="generic-answer" style="font-size:15px; color:var(--ink); line-height:1.6; margin-bottom:16px;">Thinking…</div>`;
+  exDiv.style.paddingTop = '20px';
+  exDiv.style.marginTop = '20px';
+  exDiv.innerHTML = `<div style="font-family:var(--mono); font-weight:600; color:var(--accent); margin-bottom:10px; font-size: 13px;"><i class="ph ph-user"></i> ${escapeHtml(question)}</div><div class="generic-answer" style="font-size:14px; color:var(--ink); line-height:1.6; margin-bottom:14px;">Thinking…</div>`;
   log.prepend(exDiv);
 
   try {
@@ -1632,13 +1311,12 @@ async function genericAsk() {
       if (data.chart_type && data.chart_type !== 'none' && data.chart_type !== 'table') {
         const wrap = document.createElement('div');
         wrap.style.maxWidth = '600px';
-        wrap.style.padding = '24px';
-        wrap.style.background = '#FFFFFF';
+        wrap.style.padding = '20px';
+        wrap.style.background = 'var(--bg-soft)';
         wrap.style.border = '1px solid var(--line)';
         wrap.style.borderRadius = 'var(--radius-lg)';
-        wrap.style.marginTop = '16px';
-        wrap.style.boxShadow = 'var(--shadow-sm)';
-        
+        wrap.style.marginTop = '14px';
+
         const canvas = document.createElement('canvas');
         wrap.appendChild(canvas);
         exDiv.appendChild(wrap);
@@ -1647,7 +1325,7 @@ async function genericAsk() {
         const cols = Object.keys(data.data[0]);
         const table = document.createElement('div');
         table.className = 'table-wrapper';
-        table.style.marginTop = '16px';
+        table.style.marginTop = '14px';
         table.innerHTML = `
           <div class="table-scroll">
             <table class="enterprise-table">
