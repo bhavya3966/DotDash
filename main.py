@@ -5,11 +5,8 @@ import json
 import math
 import uuid
 import time
-import pickle
-import sqlite3
 import asyncio
 import datetime
-from contextlib import closing
 from collections import OrderedDict
 import warnings
 import requests
@@ -34,94 +31,78 @@ app.add_middleware(
 # =============================================================================
 # SESSION STORAGE
 # -----------------------------------------------------------------------------
-# THE BUG THIS FIXES: sessions used to live in a plain Python dict
-# (`RB_SESSIONS = {}`) in process memory. Uvicorn/Gunicorn workers, container
-# restarts, and autoscaled replicas each have their OWN copy of that dict.
-# A request to /api/rb/shared/set could land on worker A (which then "knows"
-# about the session) while the very next request from the same browser lands
-# on worker B (which has never heard of it) -> "Session not found. Upload the
-# sheet first." even though the sheet was just connected.
+# Plain in-memory dict, keyed by session_id. DotDash runs as a single process
+# (one uvicorn worker), so there's no multi-worker/multi-replica consistency
+# problem to solve here — a shared external store (SQLite file, Redis, etc.)
+# would only add disk I/O and (de)serialization cost to every request for no
+# real benefit, since every request already lands on the same process and the
+# same dict.
 #
-# THE FIX: sessions are persisted to a local SQLite file that every worker on
-# the same machine reads from and writes to, so session state is consistent
-# no matter which worker handles which request, and it survives restarts.
-#
-# CAVEAT: if you deploy multiple SEPARATE machines/containers (not just
-# multiple workers on one machine) behind a load balancer, each machine needs
-# to see the same SQLite file (e.g. a shared volume) — or better, swap this
-# out for a real shared store like Redis or Postgres. The functions below are
-# intentionally isolated so that swap only touches this one section.
+# NOTE FOR LATER: if this ever gets deployed with more than one worker process
+# or across multiple machines behind a load balancer, this dict stops being
+# consistent across them and you'd need to bring back a real shared store
+# (Redis/Postgres are better fits than SQLite-over-a-shared-volume). The
+# functions below are kept isolated so that swap only touches this section.
 # =============================================================================
 
 SHARED_SESSION_ID = "shared"
 SHARED_AUTO_REFRESH_SECONDS = 30
-DB_PATH = os.environ.get("DOTDASH_DB_PATH", os.path.join(os.path.dirname(__file__), "dotdash_sessions.db"))
 
+# Bounds how many private (uploaded-file) sessions we keep in memory at once.
+# The shared Google Sheet session is exempt and never evicted. Every call to
+# /api/rb/upload used to create a session that lived forever (a slow memory
+# leak across a long-running process); this caps it with simple LRU eviction.
+_MAX_UPLOAD_SESSIONS = 50
 
-def _get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")  # allows concurrent readers + one writer
-    return conn
-
-
-def _init_db():
-    with closing(_get_conn()) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id TEXT PRIMARY KEY,
-                data BLOB NOT NULL,
-                updated_at REAL NOT NULL
-            )
-        """)
-        conn.commit()
-
-
-_init_db()
+_SESSIONS: "OrderedDict[str, dict]" = OrderedDict()
 
 
 def session_set(session_id: str, payload: dict) -> None:
-    """Persists a session dict (which may contain a DataFrame) to SQLite,
-    visible to every worker process immediately."""
+    """Stores a session dict (which may hold a DataFrame) in memory."""
     payload = dict(payload)
     payload.setdefault("version", time.time())
-    blob = pickle.dumps(payload)
-    with closing(_get_conn()) as conn:
-        conn.execute(
-            "INSERT INTO sessions (session_id, data, updated_at) VALUES (?, ?, ?) "
-            "ON CONFLICT(session_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
-            (session_id, blob, time.time()),
-        )
-        conn.commit()
+    _SESSIONS[session_id] = payload
+    _SESSIONS.move_to_end(session_id)
+
+    if session_id != SHARED_SESSION_ID:
+        upload_ids = [sid for sid in _SESSIONS if sid != SHARED_SESSION_ID]
+        while len(upload_ids) > _MAX_UPLOAD_SESSIONS:
+            oldest = upload_ids.pop(0)
+            _SESSIONS.pop(oldest, None)
+            _QUERY_CACHE_EVICT_SESSION(oldest)
 
 
 def session_get(session_id: str):
     """Returns the session dict, or None if it doesn't exist."""
-    with closing(_get_conn()) as conn:
-        row = conn.execute("SELECT data FROM sessions WHERE session_id = ?", (session_id,)).fetchone()
-    return pickle.loads(row[0]) if row else None
+    session = _SESSIONS.get(session_id)
+    if session is not None:
+        _SESSIONS.move_to_end(session_id)
+    return session
 
 
 def session_delete(session_id: str) -> None:
-    with closing(_get_conn()) as conn:
-        conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-        conn.commit()
+    _SESSIONS.pop(session_id, None)
 
 
-# Subscribers for the shared dashboard's Server-Sent Events stream. This is
-# necessarily per-process (an open HTTP connection can't be handed to another
-# worker) — each worker pushes updates only to the browsers connected to IT.
-# Fine in practice since every worker's auto-refresh loop independently keeps
-# its own SSE clients current from the same underlying SQLite session.
+# Subscribers for the shared dashboard's Server-Sent Events stream — one list
+# per process is exactly right here (an open HTTP connection can't be handed
+# off anyway), and since there's only one process, every connected browser
+# sees every update.
 SHARED_SUBSCRIBERS: list = []
 
-# Query-result cache: process-local and intentionally NOT persisted to
-# SQLite. Persisting it would mean re-pickling/writing a potentially large
-# blob on every single query, which defeats the point of caching. Instead
-# it's keyed on the session's "version" stamp (set whenever a session is
-# written), so a cache miss just recomputes — cheap relative to a network
-# round trip, and always correct even across workers/restarts.
+# Query-result cache, keyed on the session's "version" stamp (set whenever a
+# session is written), so a cache miss just recomputes from the in-memory
+# DataFrame — cheap, and always correct.
 _QUERY_CACHE: "OrderedDict" = OrderedDict()
 _QUERY_CACHE_MAX = 1000
+
+
+def _QUERY_CACHE_EVICT_SESSION(session_id: str) -> None:
+    """Drops cached query results tied to a session that's being evicted,
+    so the cache doesn't hold onto stale keys forever."""
+    for key in [k for k in _QUERY_CACHE if k[0] == session_id]:
+        _QUERY_CACHE.pop(key, None)
+
 
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-5",
@@ -133,9 +114,6 @@ DEFAULT_MODELS = {
 # Small bounded cache for NL -> intent parsing, so repeated/near-identical
 # questions ("show me farming team", asked again a minute later) don't
 # re-hit the LLM. Keyed on session + exact prompt text + provider/model.
-# Cleared implicitly whenever a session is replaced (new upload/refresh),
-# since the session_id changes for uploads and NL intents don't depend on
-# the underlying numbers — only on category names, which change rarely.
 # ---------------------------------------------------------------------------
 NL_INTENT_CACHE: "OrderedDict" = OrderedDict()
 NL_CACHE_MAX = 500
@@ -641,23 +619,45 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
 
 
 def build_periods(weeks: list, weeks_per_month: int = 4, weeks_per_quarter: int = 13):
-    """Groups sequential week numbers into Month/Quarter buckets. This is a defined
-    convention (not derived from real calendar dates, since the sheet only has
-    sequential week snapshots) — adjust weeks_per_month/quarter if your cadence differs."""
+    """
+    Groups sequential week numbers into Month/Quarter buckets.
+    Safely calculates offsets regardless of starting week (e.g. W40, W1, or YYYYWW).
+    """
     weeks = sorted(weeks)
     months, quarters = {}, {}
+    if not weeks:
+        return [], []
+
+    # Offset ensures calculations align cleanly even if data starts mid-year (e.g. Week 14)
+    offset = 0 if 0 in weeks else 1
+
     for w in weeks:
-        months.setdefault(w // weeks_per_month + 1, []).append(w)
-        quarters.setdefault(w // weeks_per_quarter + 1, []).append(w)
+        w_adj = w - offset
+
+        # Handle large formatted weeks (e.g. 202401 for 2024 Week 1)
+        if w > 1000:
+            year = w // 100
+            week = w % 100
+            m_idx = f"{year}-M{((week - 1) // weeks_per_month) + 1}"
+            q_idx = f"{year}-Q{((week - 1) // weeks_per_quarter) + 1}"
+        else:
+            # Standard week groupings (Week 1-13 = Q1, Week 14-26 = Q2, etc.)
+            m_idx = (w_adj // weeks_per_month) + 1
+            q_idx = (w_adj // weeks_per_quarter) + 1
+
+        months.setdefault(m_idx, []).append(w)
+        quarters.setdefault(q_idx, []).append(w)
 
     month_list = [
-        {"label": f"Month {m}", "prev_week": min(ws), "curr_week": max(ws)}
+        {"label": f"Month {m}" if isinstance(m, int) else m, "prev_week": min(ws), "curr_week": max(ws)}
         for m, ws in sorted(months.items())
     ]
+
     quarter_list = [
-        {"label": f"Q{q}", "prev_week": min(ws), "curr_week": max(ws)}
+        {"label": f"Q{q}" if isinstance(q, int) else q, "prev_week": min(ws), "curr_week": max(ws)}
         for q, ws in sorted(quarters.items())
     ]
+
     return month_list, quarter_list
 
 
@@ -896,19 +896,10 @@ async def _refresh_shared_session() -> dict:
 async def _auto_refresh_loop():
     """Keeps the shared dashboard fresh in the background so viewers don't
     have to trigger a refresh themselves — pushed out over SSE as soon as
-    new data lands.
-
-    Every worker process runs this loop, but before doing an actual network
-    fetch each one checks SQLite for a very recent refresh timestamp — if a
-    sibling worker just refreshed, this tick is skipped, which avoids every
-    worker hitting the Google Sheets export URL at the same moment."""
+    new data lands."""
     while True:
         await asyncio.sleep(SHARED_AUTO_REFRESH_SECONDS)
         try:
-            existing = session_get(SHARED_SESSION_ID)
-            if existing and existing.get("last_refreshed") and \
-                    time.time() - existing["last_refreshed"] < SHARED_AUTO_REFRESH_SECONDS * 0.8:
-                continue  # a sibling worker refreshed moments ago; nothing to do yet
             parsed = await _refresh_shared_session()
         except Exception:
             continue  # keep the last good data; try again next tick
@@ -1114,6 +1105,7 @@ async def rb_export(payload: dict = Body(...)):
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
+
 def fuzzy_match_category(value, options: list, all_label: str, threshold: int = 70) -> str:
     """Corrects an LLM-parsed category name against the sheet's actual values.
     LLMs often paraphrase or slightly mis-type category names (e.g. 'farming'
@@ -1130,48 +1122,6 @@ def fuzzy_match_category(value, options: list, all_label: str, threshold: int = 
     if match and match[1] >= threshold:
         return match[0]
     return all_label
-
-def build_periods(weeks: list, weeks_per_month: int = 4, weeks_per_quarter: int = 13):
-    """
-    Groups sequential week numbers into Month/Quarter buckets.
-    Safely calculates offsets regardless of starting week (e.g. W40, W1, or YYYYWW).
-    """
-    weeks = sorted(weeks)
-    months, quarters = {}, {}
-    if not weeks:
-        return [], []
-        
-    # Offset ensures calculations align cleanly even if data starts mid-year (e.g. Week 14)
-    offset = 0 if 0 in weeks else 1
-    
-    for w in weeks:
-        w_adj = w - offset
-        
-        # Handle large formatted weeks (e.g. 202401 for 2024 Week 1)
-        if w > 1000:
-            year = w // 100
-            week = w % 100
-            m_idx = f"{year}-M{((week - 1) // weeks_per_month) + 1}"
-            q_idx = f"{year}-Q{((week - 1) // weeks_per_quarter) + 1}"
-        else:
-            # Standard week groupings (Week 1-13 = Q1, Week 14-26 = Q2, etc.)
-            m_idx = (w_adj // weeks_per_month) + 1
-            q_idx = (w_adj // weeks_per_quarter) + 1
-            
-        months.setdefault(m_idx, []).append(w)
-        quarters.setdefault(q_idx, []).append(w)
-
-    month_list = [
-        {"label": f"Month {m}" if isinstance(m, int) else m, "prev_week": min(ws), "curr_week": max(ws)}
-        for m, ws in sorted(months.items())
-    ]
-    
-    quarter_list = [
-        {"label": f"Q{q}" if isinstance(q, int) else q, "prev_week": min(ws), "curr_week": max(ws)}
-        for q, ws in sorted(quarters.items())
-    ]
-    
-    return month_list, quarter_list
 
 
 RB_NL_SYSTEM_TEMPLATE = """You control a merchant revenue bridge dashboard. Output ONLY a JSON object (no markdown fences) with:
