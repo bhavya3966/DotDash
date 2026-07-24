@@ -280,6 +280,8 @@
   .text-success { color: var(--success); }
   .text-danger { color: var(--danger); }
   .text-primary { color: var(--accent); }
+
+  .config-note { font-size: 12.5px; color: var(--ink-soft); font-family: var(--mono); background: var(--card-bg-alt); border: 1px solid var(--line); padding: 10px 14px; border-radius: var(--radius-md); display: flex; align-items: center; gap: 8px; }
 </style>
 </head>
 <body>
@@ -303,7 +305,7 @@
       <a href="#"><i class="ph ph-file-text"></i> Reports</a>
       <a href="#"><i class="ph ph-gear"></i> Settings</a>
     </nav>
-    <div class="sidebar-foot">v1.1 · SQLite session store<br>local time zone</div>
+    <div class="sidebar-foot">v1.1 · In-memory session store<br>local time zone</div>
   </aside>
 
   <div class="main-wrapper">
@@ -311,7 +313,7 @@
     <nav class="top-navbar">
       <div class="search-bar">
         <i class="ph ph-magnifying-glass"></i>
-        <input type="text" placeholder="Search merchants, teams, regions…">
+        <input type="text" id="rbGlobalSearchInput" placeholder="Search merchants, teams, regions…">
       </div>
       <div class="topbar-actions">
         <div class="date-badge" id="currentDateBadge">Today</div>
@@ -324,26 +326,13 @@
 
     <main class="content">
 
-      <section class="panel">
-        <h3 class="section-title" style="margin-top:0;"><span class="eyebrow">Config</span> Workspace</h3>
-        <div class="settings-row">
-          <select id="rbProviderSelect">
-            <option value="anthropic">Claude (Anthropic)</option>
-            <option value="gemini">Gemini (Google)</option>
-            <option value="openai">GPT (OpenAI)</option>
-          </select>
-          <input type="password" id="rbApiKeyInput" placeholder="Paste your API key" style="flex:1; min-width: 240px;" />
-          <input type="text" class="model-input" id="rbModelInput" placeholder="model (optional)" />
-          <span class="key-status missing" id="rbKeyStatus">no key saved</span>
-        </div>
-      </section>
-
       <section class="panel" id="rbUploadPanel">
         <h3 class="section-title" style="margin-top:0;"><span class="eyebrow">Source</span> Data</h3>
-        <div class="settings-row" style="margin-bottom:20px;">
-          <input type="text" id="rbSheetUrlInput" placeholder="Paste a Google Sheets link…" style="flex:1;" />
-          <button class="primary" id="rbSheetLoadBtn">Connect Shared Sheet</button>
+        <div class="config-note" style="margin-bottom:14px;">
+          <i class="ph ph-info"></i>
+          <span>The team Google Sheet and AI provider/API key are configured on the server. This page loads them automatically — nothing to paste here.</span>
         </div>
+        <div id="rbServiceAccountHint" style="margin-bottom:14px; font-size:12.5px; color: var(--ink-soft); font-family: var(--mono); background: var(--card-bg-alt); border: 1px solid var(--line); padding: 10px 14px; border-radius: var(--radius-md); display:none;"></div>
         <div class="upload-zone" id="rbDropZone">
           <i class="ph ph-upload-simple" style="font-size: 26px; margin-bottom: 10px; color: var(--accent); display:block;"></i>
           <div id="rbDropLabel">Or drop a local .xlsx or .csv file here for a private session</div>
@@ -361,7 +350,6 @@
         <div id="rbLiveBar" style="display:none;">
           <span id="rbLiveStatus"><i class="ph ph-check-circle"></i> SYNCED WITH GOOGLE SHEET</span>
           <span>
-            <a href="#" id="rbChangeSource">Change Source</a>
             <a href="#" id="rbRefreshNow"><i class="ph ph-arrows-clockwise"></i> Refresh Now</a>
           </span>
         </div>
@@ -519,36 +507,6 @@ const rb = {
 let rbEventSource = null;
 let rbTrendChart = null;
 
-const rbProviderSelect = document.getElementById('rbProviderSelect');
-const rbApiKeyInput = document.getElementById('rbApiKeyInput');
-const rbModelInput = document.getElementById('rbModelInput');
-const rbKeyStatus = document.getElementById('rbKeyStatus');
-
-function loadRbSettings() {
-  const saved = JSON.parse(localStorage.getItem('dotdash_llm_settings') || '{}');
-  if (saved.provider) rbProviderSelect.value = saved.provider;
-  if (saved.model) rbModelInput.value = saved.model;
-  rbApiKeyInput.value = localStorage.getItem('dotdash_llm_key_' + rbProviderSelect.value) || '';
-  updateRbKeyStatus();
-}
-function updateRbKeyStatus() {
-  const key = rbApiKeyInput.value.trim();
-  rbKeyStatus.textContent = key ? 'Active for ' + rbProviderSelect.options[rbProviderSelect.selectedIndex].text : 'No key saved';
-  rbKeyStatus.style.color = key ? 'var(--success)' : 'var(--ink-soft)';
-}
-function saveRbSettings() {
-  localStorage.setItem('dotdash_llm_settings', JSON.stringify({ provider: rbProviderSelect.value, model: rbModelInput.value.trim() }));
-  if (rbApiKeyInput.value.trim()) localStorage.setItem('dotdash_llm_key_' + rbProviderSelect.value, rbApiKeyInput.value.trim());
-  updateRbKeyStatus();
-}
-rbProviderSelect.addEventListener('change', () => {
-  rbApiKeyInput.value = localStorage.getItem('dotdash_llm_key_' + rbProviderSelect.value) || '';
-  saveRbSettings();
-});
-rbApiKeyInput.addEventListener('input', saveRbSettings);
-rbModelInput.addEventListener('input', saveRbSettings);
-loadRbSettings();
-
 function applySharedSummary(summary) {
   rb.sessionId = summary.rb_session_id;
   rb.dashboardType = summary.dashboard_type || 'revenue_bridge';
@@ -663,47 +621,35 @@ async function bootstrapSharedDashboard() {
 }
 bootstrapSharedDashboard();
 
-document.getElementById('rbSheetLoadBtn').addEventListener('click', async () => {
-  const url = document.getElementById('rbSheetUrlInput').value.trim();
-  if (!url) return;
-  const btn = document.getElementById('rbSheetLoadBtn');
-  btn.disabled = true;
-  btn.textContent = 'Connecting…';
-  document.getElementById('rbFileMeta').innerHTML = '';
+async function loadServiceAccountHint() {
+  const hintEl = document.getElementById('rbServiceAccountHint');
   try {
-    const res = await fetch('/api/rb/shared/set', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sheet_url: url }),
-    });
+    const res = await fetch('/api/rb/service_account_email');
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || 'Could not load this sheet.');
-    applySharedSummary(data);
-  } catch (err) {
-    document.getElementById('rbFileMeta').innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Connect Shared Sheet';
+    if (!res.ok || !data.email) throw new Error();
+    hintEl.innerHTML = `<i class="ph ph-info"></i> This is a private org sheet — it must be shared with <strong>${escapeHtml(data.email)}</strong> (Viewer access) for the server to load it.`;
+    hintEl.style.display = 'block';
+  } catch (e) {
+    hintEl.style.display = 'none';
   }
-});
+}
+loadServiceAccountHint();
 
 document.getElementById('rbRefreshNow').addEventListener('click', async (e) => {
   e.preventDefault();
   const label = document.getElementById('rbRefreshNow');
   label.innerHTML = '<i class="ph ph-spinner-gap" style="animation: spin 1s linear infinite;"></i> Refreshing…';
   try {
-    await fetch('/api/rb/shared/refresh', { method: 'POST' });
+    const res = await fetch('/api/rb/shared/refresh', { method: 'POST' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || 'Refresh failed');
+    }
+  } catch (err) {
+    document.getElementById('rbFileMeta').innerHTML = `<span class="error">${escapeHtml(err.message)}</span>`;
   } finally {
-    label.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Refresh';
+    label.innerHTML = '<i class="ph ph-arrows-clockwise"></i> Refresh Now';
   }
-});
-
-document.getElementById('rbChangeSource').addEventListener('click', (e) => {
-  e.preventDefault();
-  if (rbEventSource) rbEventSource.close();
-  rb.isShared = false;
-  document.getElementById('rbDashboard').style.display = 'none';
-  document.getElementById('rbLiveBar').style.display = 'none';
 });
 
 const rbDropZone = document.getElementById('rbDropZone');
@@ -995,8 +941,6 @@ document.getElementById('rbPromptInput').addEventListener('keydown', e => { if (
 async function rbAsk() {
   const prompt = document.getElementById('rbPromptInput').value.trim();
   if (!prompt || !rb.sessionId) return;
-  const apiKey = rbApiKeyInput.value.trim();
-  if (!apiKey) { alert('Add your API key in the Workspace Settings first.'); return; }
 
   const bodyEl = document.getElementById('rbBody');
   bodyEl.innerHTML = '<div class="rb-loading">Generating AI analysis…</div>';
@@ -1008,9 +952,6 @@ async function rbAsk() {
       body: JSON.stringify({
         rb_session_id: rb.sessionId,
         prompt,
-        provider: rbProviderSelect.value,
-        api_key: apiKey,
-        model: rbModelInput.value.trim(),
       })
     });
     const data = await res.json();
@@ -1077,6 +1018,48 @@ function fmtInr(n) {
   return n.toFixed(0);
 }
 
+// Holds the full (server-side capped at 500) row set + column/format info
+// for whichever bridge table is currently on screen, so search can filter
+// across everything the server returned — not just the ~50 rows rendered.
+let rbLastTableRows = [];
+let rbLastTableCols = [];
+let rbLastIsRevenue = true;
+const RB_TABLE_RENDER_LIMIT = 50;
+
+function buildTableRowHtml(row, cols, isRevenue) {
+  return `<tr>${cols.map(c => {
+    let v = row[c];
+    if (typeof v === 'number' && ['current_week', 'previous_week'].includes(c) && isRevenue) {
+      v = '₹' + fmtInr(v);
+    } else if (typeof v === 'number' && ['reduction', 'new_opportunities'].includes(c)) {
+      if (c === 'reduction' && v > 0) return `<td><span class="status-badge status-churn">-${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
+      if (c === 'new_opportunities' && v > 0) return `<td><span class="status-badge status-active">+${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
+      v = isRevenue ? '₹' + fmtInr(v) : (v ? v : '');
+    }
+    return `<td>${escapeHtml(String(v ?? ''))}</td>`;
+  }).join('')}</tr>`;
+}
+
+function renderTableRows(query) {
+  const tbody = document.getElementById('rbTableBody');
+  const countEl = document.getElementById('rbTableRowCount');
+  if (!tbody) return;
+
+  const q = (query || '').trim().toLowerCase();
+  const matches = q
+    ? rbLastTableRows.filter(row => Object.values(row).some(v => String(v ?? '').toLowerCase().includes(q)))
+    : rbLastTableRows;
+
+  tbody.innerHTML = matches.slice(0, RB_TABLE_RENDER_LIMIT).map(row => buildTableRowHtml(row, rbLastTableCols, rbLastIsRevenue)).join('')
+    || `<tr><td colspan="${rbLastTableCols.length}" style="text-align:center; color:var(--ink-faint); padding:24px;">No rows match "${escapeHtml(query)}".</td></tr>`;
+
+  if (countEl) {
+    countEl.textContent = matches.length > RB_TABLE_RENDER_LIMIT
+      ? `Showing ${RB_TABLE_RENDER_LIMIT} of ${matches.length} matching rows.`
+      : (q ? `${matches.length} matching row${matches.length === 1 ? '' : 's'}.` : '');
+  }
+}
+
 function renderRbBody(data) {
   const bodyEl = document.getElementById('rbBody');
   const metric = data.metric || 'revenue';
@@ -1092,38 +1075,31 @@ function renderRbBody(data) {
   const sparkGood = `<svg width="46" height="14" viewBox="0 0 50 15" fill="none"><path d="M0 12L15 8L30 10L50 2" stroke="var(--success)" stroke-width="2" stroke-linecap="round"/></svg>`;
   const sparkBad = `<svg width="46" height="14" viewBox="0 0 50 15" fill="none"><path d="M0 2L15 10L30 8L50 12" stroke="var(--danger)" stroke-width="2" stroke-linecap="round"/></svg>`;
 
-  const tableCols = data.table_rows.length ? Object.keys(data.table_rows[0]) : [];
-  const tableHtml = data.table_rows.length ? `
+  rbLastTableRows = data.table_rows || [];
+  rbLastTableCols = rbLastTableRows.length ? Object.keys(rbLastTableRows[0]) : [];
+  rbLastIsRevenue = isRevenue;
+  const tableCols = rbLastTableCols;
+
+  const tableHtml = tableCols.length ? `
     <div class="table-wrapper">
       <div class="table-header-toolbar">
          <h4 style="margin:0; font-family: var(--font-display); font-size: 14px; color: var(--ink);">Data View</h4>
-         <div style="display:flex; gap:12px;">
+         <div style="display:flex; align-items:center; gap:12px;">
+            <div id="rbTableRowCount" style="font-size:11.5px; color:var(--ink-faint); font-family: var(--mono); white-space:nowrap;"></div>
             <div class="search-bar" style="width: 200px; background: var(--card-bg); border: 1px solid var(--line);">
                <i class="ph ph-magnifying-glass"></i>
-               <input type="text" placeholder="Search rows...">
+               <input type="text" id="rbTableSearchInput" placeholder="Search rows...">
             </div>
          </div>
       </div>
       <div class="table-scroll">
         <table class="enterprise-table">
           <thead><tr>${tableCols.map(c => `<th>${escapeHtml(c)}</th>`).join('')}</tr></thead>
-          <tbody>${data.table_rows.slice(0, 50).map(row => `
-            <tr>${tableCols.map(c => {
-              let v = row[c];
-              if (typeof v === 'number' && ['current_week', 'previous_week'].includes(c) && isRevenue) {
-                v = '₹' + fmtInr(v);
-              } else if (typeof v === 'number' && ['reduction', 'new_opportunities'].includes(c)) {
-                if (c === 'reduction' && v > 0) return `<td><span class="status-badge status-churn">-${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
-                if (c === 'new_opportunities' && v > 0) return `<td><span class="status-badge status-active">+${isRevenue ? '₹' + fmtInr(v) : v}</span></td>`;
-                v = isRevenue ? '₹' + fmtInr(v) : (v ? v : '');
-              }
-              return `<td>${escapeHtml(String(v ?? ''))}</td>`;
-            }).join('')}</tr>
-          `).join('')}</tbody>
+          <tbody id="rbTableBody">${rbLastTableRows.slice(0, RB_TABLE_RENDER_LIMIT).map(row => buildTableRowHtml(row, tableCols, isRevenue)).join('')}</tbody>
         </table>
       </div>
     </div>
-    ${data.table_rows.length > 50 ? `<div style="margin-top:12px; font-size:11.5px; color:var(--ink-faint); font-family: var(--mono);">Showing top 50 rows.</div>` : ''}
+    ${rbLastTableRows.length > RB_TABLE_RENDER_LIMIT ? `<div style="margin-top:12px; font-size:11.5px; color:var(--ink-faint); font-family: var(--mono);">Showing top ${RB_TABLE_RENDER_LIMIT} rows — use search to find a specific one.</div>` : ''}
   ` : '<div class="panel"><div style="color:var(--ink-soft); text-align:center; padding: 32px;">No merchants match this selection.</div></div>';
 
   bodyEl.innerHTML = `
@@ -1218,6 +1194,29 @@ function renderRbBody(data) {
 
   const exportBtn = document.getElementById('rbExportBtn');
   if (exportBtn) exportBtn.addEventListener('click', rbExport);
+
+  const tableSearchInput = document.getElementById('rbTableSearchInput');
+  if (tableSearchInput) {
+    tableSearchInput.addEventListener('input', (e) => renderTableRows(e.target.value));
+    // Keep it in sync with whatever's currently in the top-nav search box,
+    // so switching filters/weeks doesn't silently drop an in-progress search.
+    const globalSearch = document.getElementById('rbGlobalSearchInput');
+    if (globalSearch && globalSearch.value) {
+      tableSearchInput.value = globalSearch.value;
+      renderTableRows(globalSearch.value);
+    }
+  }
+}
+
+// Top-nav search doubles as a shortcut into whichever data table is
+// currently on screen, so it's never just decorative.
+const rbGlobalSearchInput = document.getElementById('rbGlobalSearchInput');
+if (rbGlobalSearchInput) {
+  rbGlobalSearchInput.addEventListener('input', (e) => {
+    const tableSearchInput = document.getElementById('rbTableSearchInput');
+    if (tableSearchInput) tableSearchInput.value = e.target.value;
+    renderTableRows(e.target.value);
+  });
 }
 
 // ============================================================
@@ -1279,8 +1278,6 @@ async function genericAsk() {
   const input = document.getElementById('rbGenericPromptInput');
   const question = input.value.trim();
   if (!question || !rb.sessionId) return;
-  const apiKey = rbApiKeyInput.value.trim();
-  if (!apiKey) { alert('Add your API key in the Workspace Settings first.'); return; }
   input.value = '';
 
   const log = document.getElementById('rbGenericLog');
@@ -1298,9 +1295,6 @@ async function genericAsk() {
       body: JSON.stringify({
         rb_session_id: rb.sessionId,
         prompt: question,
-        provider: rbProviderSelect.value,
-        api_key: apiKey,
-        model: rbModelInput.value.trim(),
       })
     });
     const data = await res.json();

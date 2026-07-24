@@ -41,3 +41,6 @@ Thumbs.db
 
 # Node (if used later)
 node_modules/
+
+
+service_account.json

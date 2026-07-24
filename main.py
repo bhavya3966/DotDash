@@ -5,18 +5,23 @@ import json
 import math
 import uuid
 import time
+import base64
 import asyncio
 import datetime
 from collections import OrderedDict
 import warnings
-import requests
 import numpy as np
 import pandas as pd
 from rapidfuzz import process, fuzz
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
+from google.oauth2 import service_account
+from googleapiclient.discovery import build as gapi_build
+from googleapiclient.errors import HttpError as GoogleApiHttpError
+from dotenv import load_dotenv
+
 
 warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 app = FastAPI(title="DotDash")
@@ -27,6 +32,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+load_dotenv() 
+print("DOTDASH_SHEET_URL =", os.getenv("DOTDASH_SHEET_URL"))
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Safety net: every endpoint below raises HTTPException for expected
+    error cases (bad file, bad sheet, etc.), which FastAPI already turns into
+    clean JSON. This catches anything unexpected instead, so the frontend's
+    `await res.json()` never throws on an HTML/plaintext traceback page — the
+    user gets a readable error message instead of a blank broken UI."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong processing that request. Please try again."},
+    )
 
 # =============================================================================
 # SESSION STORAGE
@@ -109,6 +129,24 @@ DEFAULT_MODELS = {
     "openai": "gpt-4o-mini",
     "gemini": "gemini-2.5-flash",
 }
+
+# ---------------------------------------------------------------------------
+# FIXED SERVER-SIDE CONFIG
+# -----------------------------------------------------------------------------
+# The LLM provider/API key/model and the team's Google Sheet link now live
+# here as environment variables, set once on the server, instead of being
+# typed into the frontend by whoever opens the page. Set these in your
+# deployment environment (e.g. Render's "Environment" tab):
+#
+#   LLM_PROVIDER      -> "anthropic" | "openai" | "gemini"  (default: anthropic)
+#   LLM_API_KEY       -> the API key for that provider
+#   LLM_MODEL         -> optional, overrides the provider's default model
+#   DOTDASH_SHEET_URL -> the Google Sheets link to auto-load on startup
+# ---------------------------------------------------------------------------
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").strip().lower()
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "").strip()
+LLM_MODEL = os.environ.get("LLM_MODEL", "").strip()
+DEFAULT_SHEET_URL = os.environ.get("DOTDASH_SHEET_URL", "").strip()
 
 # ---------------------------------------------------------------------------
 # Small bounded cache for NL -> intent parsing, so repeated/near-identical
@@ -809,27 +847,109 @@ def extract_sheet_id(url: str) -> str:
     return m.group(1)
 
 
-def fetch_gsheet_as_xlsx(url: str) -> bytes:
-    """Downloads the whole workbook via Google's public export link. Requires the
-    sheet to be shared as 'Anyone with the link can view'."""
-    sheet_id = extract_sheet_id(url)
-    export_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
-    try:
-        resp = requests.get(export_url, timeout=30, allow_redirects=True)
-    except requests.RequestException as e:
-        raise ValueError(f"Couldn't reach Google Sheets: {e}")
+# =============================================================================
+# GOOGLE SERVICE ACCOUNT AUTH
+# -----------------------------------------------------------------------------
+# The org's sheet is private (not "anyone with the link"), so instead of a
+# public export URL, DotDash authenticates as a dedicated Google service
+# account and reads the sheet via the Drive API. The only setup required on
+# the org's side is sharing that ONE sheet with the service account's email
+# address (Viewer is enough) — exactly like sharing it with a colleague. No
+# OAuth login flow, no consent screen, nothing that touches anyone's personal
+# mailbox or credentials.
+#
+# Credentials are provided one of two ways (checked in this order), so this
+# works whether you're deploying to a platform with an env-var-only secrets
+# panel or running locally with a key file:
+#   1. GOOGLE_SERVICE_ACCOUNT_JSON — the service account's JSON key, either as
+#      a raw JSON string or base64-encoded (base64 avoids some platforms'
+#      env-var UIs mangling newlines/quotes in raw JSON).
+#   2. GOOGLE_APPLICATION_CREDENTIALS (or a service_account.json file sitting
+#      next to this file) — a path to the JSON key file.
+# =============================================================================
 
-    if resp.status_code in (401, 403):
-        raise ValueError(
-            "Can't access this sheet. In Google Sheets, click Share > General access > "
-            "'Anyone with the link' (Viewer), then try again."
+GOOGLE_API_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+_service_account_creds = None
+_service_account_email = None
+
+
+def _load_service_account_credentials():
+    global _service_account_creds, _service_account_email
+    if _service_account_creds is not None:
+        return _service_account_creds
+
+    info = None
+    raw = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if raw:
+        raw = raw.strip()
+        try:
+            info = json.loads(raw)
+        except json.JSONDecodeError:
+            try:
+                info = json.loads(base64.b64decode(raw).decode("utf-8"))
+            except Exception:
+                raise ValueError(
+                    "GOOGLE_SERVICE_ACCOUNT_JSON is set but isn't valid JSON or base64-encoded JSON."
+                )
+    else:
+        key_path = os.environ.get(
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            os.path.join(os.path.dirname(__file__), "service_account.json"),
         )
-    if resp.status_code != 200 or not resp.content[:2] == b'PK':
+        if os.path.exists(key_path):
+            with open(key_path) as f:
+                info = json.load(f)
+
+    if info is None:
         raise ValueError(
-            "Couldn't download this as a spreadsheet. Double-check the link is a Google "
-            "Sheets URL and it's shared as 'Anyone with the link can view'."
+            "No Google service account is configured. Set GOOGLE_SERVICE_ACCOUNT_JSON "
+            "as an environment variable (paste the service account's JSON key), or place "
+            "the key file at service_account.json next to main.py."
         )
-    return resp.content
+
+    creds = service_account.Credentials.from_service_account_info(info, scopes=GOOGLE_API_SCOPES)
+    _service_account_creds = creds
+    _service_account_email = info.get("client_email")
+    return creds
+
+
+def get_service_account_email() -> str:
+    """Returns the service account's email so the frontend can tell whoever
+    owns the sheet exactly which address to share it with."""
+    _load_service_account_credentials()
+    return _service_account_email
+
+
+def fetch_gsheet_via_service_account(sheet_id: str) -> bytes:
+    """Downloads the workbook using the service account's credentials via the
+    Drive API's export endpoint — works for org-restricted sheets, as long as
+    the sheet has been shared with the service account's email."""
+    creds = _load_service_account_credentials()
+    drive = gapi_build("drive", "v3", credentials=creds, cache_discovery=False)
+    try:
+        content = drive.files().export(
+            fileId=sheet_id,
+            mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ).execute()
+    except GoogleApiHttpError as e:
+        status = e.resp.status if hasattr(e, "resp") else None
+        if status == 404:
+            raise ValueError("Sheet not found. Double-check the link is correct.")
+        if status == 403:
+            raise ValueError(
+                f"Access denied. In Google Sheets, click Share and add "
+                f"{_service_account_email} with Viewer access, then try again."
+            )
+        raise ValueError(f"Google API error: {e}")
+    return content
+
+
+def fetch_gsheet_as_xlsx(url: str) -> bytes:
+    """Downloads the whole workbook via the org's Google service account —
+    works for sheets restricted to the organization, no public sharing
+    required."""
+    sheet_id = extract_sheet_id(url)
+    return fetch_gsheet_via_service_account(sheet_id)
 
 
 def _shared_summary(parsed: dict, rb_session_id: str) -> dict:
@@ -909,7 +1029,30 @@ async def _auto_refresh_loop():
 
 @app.on_event("startup")
 async def _on_startup():
+    if DEFAULT_SHEET_URL:
+        try:
+            content = await asyncio.to_thread(fetch_gsheet_as_xlsx, DEFAULT_SHEET_URL)
+            parsed = await asyncio.to_thread(load_workbook_smart, content)
+            parsed["source_url"] = DEFAULT_SHEET_URL
+            parsed["last_refreshed"] = time.time()
+            parsed["version"] = parsed["last_refreshed"]
+            session_set(SHARED_SESSION_ID, parsed)
+        except Exception as e:
+            # Don't crash the whole app if the sheet can't be loaded yet
+            # (e.g. not shared with the service account yet) — log and let
+            # /api/rb/shared/refresh or the next auto-refresh tick retry.
+            print(f"[startup] Could not load DOTDASH_SHEET_URL: {e}")
     asyncio.create_task(_auto_refresh_loop())
+
+
+@app.get("/api/rb/service_account_email")
+def rb_service_account_email():
+    """Tells the frontend which email address the sheet needs to be shared
+    with. Never exposes the key itself — just the public-facing email."""
+    try:
+        return {"email": get_service_account_email()}
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/rb/shared/status")
@@ -987,7 +1130,7 @@ async def rb_shared_refresh():
 async def rb_upload(file: UploadFile = File(...)):
     content = await file.read()
     try:
-        parsed = load_dataset_smart(content, file.filename or "")
+        parsed = await asyncio.to_thread(load_dataset_smart, content, file.filename or "")
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -997,13 +1140,13 @@ async def rb_upload(file: UploadFile = File(...)):
     return _shared_summary(parsed, rb_session_id)
 
 
-def _cached_bridge(session_id: str, session: dict, prev_week: int, curr_week: int, filters: dict, metric: str):
+async def _cached_bridge(session_id: str, session: dict, prev_week: int, curr_week: int, filters: dict, metric: str):
     version = session.get("version", 0)
     key = (session_id, version, int(prev_week), int(curr_week), metric, tuple(sorted(filters.items())))
     if key in _QUERY_CACHE:
         _QUERY_CACHE.move_to_end(key)
         return _QUERY_CACHE[key]
-    result = compute_metric_bridge(session["df"], int(prev_week), int(curr_week), filters, metric)
+    result = await asyncio.to_thread(compute_metric_bridge, session["df"], int(prev_week), int(curr_week), filters, metric)
     _QUERY_CACHE[key] = result
     _QUERY_CACHE.move_to_end(key)
     if len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
@@ -1035,7 +1178,7 @@ async def rb_query(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="prev_week and curr_week are required.")
 
     try:
-        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
+        result = await _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1061,7 +1204,7 @@ async def rb_trend(payload: dict = Body(...)):
     if session.get("dashboard_type") != "revenue_bridge":
         raise HTTPException(status_code=400, detail="Trend view is only available for the weekly revenue bridge format.")
 
-    points = compute_trend(session["df"], session["weeks"], filters, metric)
+    points = await asyncio.to_thread(compute_trend, session["df"], session["weeks"], filters, metric)
     return {"metric": metric, "points": points}
 
 
@@ -1089,7 +1232,7 @@ async def rb_export(payload: dict = Body(...)):
         raise HTTPException(status_code=400, detail="prev_week and curr_week are required.")
 
     try:
-        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
+        result = await _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1147,9 +1290,9 @@ Rules:
 async def rb_nl_query(payload: dict = Body(...)):
     rb_session_id = payload.get("rb_session_id")
     prompt = payload.get("prompt", "").strip()
-    provider = payload.get("provider", "").strip().lower()
-    api_key = payload.get("api_key", "").strip()
-    model = payload.get("model", "").strip()
+    provider = LLM_PROVIDER
+    api_key = LLM_API_KEY
+    model = LLM_MODEL
 
     session = session_get(rb_session_id) if rb_session_id else None
     if session is None:
@@ -1159,9 +1302,9 @@ async def rb_nl_query(payload: dict = Body(...)):
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is empty.")
     if provider not in DEFAULT_MODELS:
-        raise HTTPException(status_code=400, detail="Pick a provider: anthropic, openai, or gemini.")
+        raise HTTPException(status_code=500, detail="Server misconfigured: set LLM_PROVIDER to anthropic, openai, or gemini.")
     if not api_key:
-        raise HTTPException(status_code=400, detail="Add your API key in the settings panel first.")
+        raise HTTPException(status_code=500, detail="Server misconfigured: LLM_API_KEY is not set.")
 
     df = session["df"]
     weeks = session["weeks"]
@@ -1179,7 +1322,7 @@ async def rb_nl_query(payload: dict = Body(...)):
         [f"{q['label']}=W{q['prev_week']}-W{q['curr_week']}" for q in quarters]
     ) or "none defined"
 
-    cache_key = (rb_session_id, prompt.lower(), provider, model)
+    cache_key = (rb_session_id, session.get("version", 0), prompt.lower(), provider, model)
     intent = nl_cache_get(cache_key)
 
     if intent is None:
@@ -1196,7 +1339,7 @@ async def rb_nl_query(payload: dict = Body(...)):
             periods=periods_desc,
         )
         try:
-            raw = call_llm(provider, api_key, model, system_prompt, prompt).strip()
+            raw = (await asyncio.to_thread(call_llm, provider, api_key, model, system_prompt, prompt)).strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             intent = json.loads(raw)
         except json.JSONDecodeError as e:
@@ -1223,7 +1366,7 @@ async def rb_nl_query(payload: dict = Body(...)):
     curr_week = intent.get("curr_week", default_curr)
 
     try:
-        result = _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
+        result = await _cached_bridge(rb_session_id, session, prev_week, curr_week, filters, metric)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1235,9 +1378,9 @@ async def rb_nl_query(payload: dict = Body(...)):
 async def generic_ask(payload: dict = Body(...)):
     rb_session_id = payload.get("rb_session_id")
     prompt = payload.get("prompt", "").strip()
-    provider = payload.get("provider", "").strip().lower()
-    api_key = payload.get("api_key", "").strip()
-    model = payload.get("model", "").strip()
+    provider = LLM_PROVIDER
+    api_key = LLM_API_KEY
+    model = LLM_MODEL
 
     session = session_get(rb_session_id) if rb_session_id else None
     if session is None:
@@ -1247,20 +1390,20 @@ async def generic_ask(payload: dict = Body(...)):
     if not prompt:
         raise HTTPException(status_code=400, detail="Question is empty.")
     if provider not in DEFAULT_MODELS:
-        raise HTTPException(status_code=400, detail="Pick a provider: anthropic, openai, or gemini.")
+        raise HTTPException(status_code=500, detail="Server misconfigured: set LLM_PROVIDER to anthropic, openai, or gemini.")
     if not api_key:
-        raise HTTPException(status_code=400, detail="Add your API key in the settings panel first.")
+        raise HTTPException(status_code=500, detail="Server misconfigured: LLM_API_KEY is not set.")
 
     df = session["df"]
     schema = get_schema_summary(df)
     user_msg = f"DataFrame schema ({len(df)} rows):\n{schema}\n\nQuestion: {prompt}"
 
-    cache_key = ("generic", rb_session_id, prompt.strip().lower(), provider, model)
+    cache_key = ("generic", rb_session_id, session.get("version", 0), prompt.strip().lower(), provider, model)
     plan = nl_cache_get(cache_key)
 
     if plan is None:
         try:
-            raw = call_llm(provider, api_key, model, GENERIC_SYSTEM_PROMPT, user_msg).strip()
+            raw = (await asyncio.to_thread(call_llm, provider, api_key, model, GENERIC_SYSTEM_PROMPT, user_msg)).strip()
             raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             plan = json.loads(raw)
         except json.JSONDecodeError as e:
@@ -1271,7 +1414,7 @@ async def generic_ask(payload: dict = Body(...)):
 
     code = plan.get("pandas_code", "")
     try:
-        result = safe_exec_generic(code, df)
+        result = await asyncio.to_thread(safe_exec_generic, code, df)
         result_json = generic_result_to_json(result)
     except Exception:
         return {
